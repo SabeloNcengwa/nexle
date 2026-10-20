@@ -1,0 +1,45 @@
+.link {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+  line-height: 0;
+}
+
+.logo {
+  display: block;
+  height: auto;
+  width: auto;
+  max-width: 100%;
+  object-fit: contain;
+}
+
+.header {
+  height: 2.35rem;
+  width: auto;
+}
+
+.hero {
+  height: clamp(4.5rem, 14vw, 7.5rem);
+  width: auto;
+  margin: 0 auto 1.25rem;
+  filter: drop-shadow(0 12px 28px rgba(20, 20, 20, 0.08));
+}
+
+.auth {
+  height: 3.25rem;
+  width: auto;
+  margin: 0 auto 1rem;
+}
+
+.footer {
+  height: 1.85rem;
+  width: auto;
+  margin: 0 auto 0.65rem;
+  opacity: 0.92;
+}
+
+@media (max-width: 720px) {
+  .header {
+    height: 2rem;
+  }
+}

@@ -1,0 +1,12 @@
+node_modules
+**/node_modules
+**/dist
+.git
+.emulator-data
+.env
+**/.env
+*.md
+apps/web
+coverage
+.firebase
+agent-transcripts

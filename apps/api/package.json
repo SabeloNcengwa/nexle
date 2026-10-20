@@ -1,0 +1,38 @@
+{
+  "name": "@mavundla/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src --ext .ts",
+    "test": "vitest run --config vitest.config.ts",
+    "test:rules": "vitest run --config vitest.rules.config.ts",
+    "bootstrap:admin": "tsx src/scripts/bootstrapAdmin.ts"
+  },
+  "dependencies": {
+    "@mavundla/shared": "0.1.0",
+    "cors": "^2.8.5",
+    "dotenv": "^18.0.8",
+    "express": "^4.21.2",
+    "firebase-admin": "^13.1.0",
+    "helmet": "^8.0.0",
+    "morgan": "^1.10.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^4.0.1",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/morgan": "^1.9.9",
+    "@types/node": "^22.13.4",
+    "@types/supertest": "^6.0.2",
+    "firebase": "^11.3.1",
+    "supertest": "^7.0.0",
+    "tsx": "^4.19.2",
+    "vitest": "^3.0.5"
+  }
+}

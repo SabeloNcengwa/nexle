@@ -1,0 +1,89 @@
+.shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.header {
+  border-bottom: 1px solid var(--color-line);
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(10px);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+.headerInner {
+  max-width: var(--max);
+  margin: 0 auto;
+  padding: 0.9rem 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.85rem;
+  align-items: center;
+}
+
+.nav a {
+  color: var(--color-ink-muted);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.nav a:hover,
+.nav a.active {
+  color: var(--color-brand);
+}
+
+.main {
+  flex: 1;
+  max-width: var(--max);
+  width: 100%;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem 3rem;
+}
+
+.footer {
+  border-top: 1px solid var(--color-line);
+  padding: 1.5rem 1.25rem;
+  text-align: center;
+  color: var(--color-ink-muted);
+  font-size: 0.9rem;
+  display: grid;
+  justify-items: center;
+  gap: 0.35rem;
+}
+
+.footer p {
+  margin: 0;
+}
+
+.btn {
+  appearance: none;
+  border: 1px solid transparent;
+  background: var(--color-brand);
+  color: white;
+  border-radius: 999px;
+  padding: 0.55rem 1rem;
+  font-weight: 600;
+}
+
+.btnSecondary {
+  composes: btn;
+  background: transparent;
+  border-color: var(--color-line);
+  color: var(--color-ink);
+}
+
+@media (max-width: 720px) {
+  .headerInner {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

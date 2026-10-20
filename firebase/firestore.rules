@@ -1,0 +1,253 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function hasPlatformRole(role) {
+      return isSignedIn()
+        && userDoc().data.keys().hasAll(['platformRoles'])
+        && role in userDoc().data.platformRoles;
+    }
+
+    function isStaff() {
+      return hasPlatformRole('super_admin')
+        || hasPlatformRole('catalogue_moderator')
+        || hasPlatformRole('support_agent')
+        || hasPlatformRole('finance_operator');
+    }
+
+    function isModerator() {
+      return hasPlatformRole('super_admin') || hasPlatformRole('catalogue_moderator');
+    }
+
+    function isSuperAdmin() {
+      return hasPlatformRole('super_admin');
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    match /users/{uid} {
+      allow read: if isOwner(uid) || isStaff();
+      allow create: if isOwner(uid)
+        && request.resource.data.uid == uid
+        && request.resource.data.platformRoles == [];
+      allow update: if isOwner(uid)
+        && request.resource.data.uid == uid
+        && request.resource.data.platformRoles == resource.data.platformRoles
+        && request.resource.data.status == resource.data.status;
+      allow update: if isSuperAdmin();
+      allow delete: if false;
+    }
+
+    match /sellerApplications/{applicationId} {
+      allow read: if isSignedIn()
+        && (resource.data.ownerUid == request.auth.uid || isStaff());
+      allow create: if isSignedIn()
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.status == 'draft';
+      allow update: if isSignedIn() && (
+        (
+          resource.data.ownerUid == request.auth.uid
+          && resource.data.status in ['draft', 'rejected']
+          && request.resource.data.ownerUid == resource.data.ownerUid
+          && request.resource.data.status in ['draft', 'submitted']
+        )
+        || isStaff()
+      );
+      allow delete: if false;
+    }
+
+    match /sellers/{sellerId} {
+      allow read: if isSignedIn() && (
+        resource.data.ownerUid == request.auth.uid
+        || isStaff()
+        || exists(/databases/$(database)/documents/sellerMembers/$(request.auth.uid + '_' + sellerId))
+      );
+      allow write: if false; // Admin SDK / privileged server only
+    }
+
+    match /sellerMembers/{memberId} {
+      allow read: if isSignedIn() && (
+        resource.data.uid == request.auth.uid
+        || isStaff()
+      );
+      allow write: if false;
+    }
+
+    match /categories/{categoryId} {
+      allow read: if resource.data.isActive == true || isStaff();
+      allow write: if isModerator();
+    }
+
+    match /products/{productId} {
+      allow read: if resource.data.status == 'active'
+        || (isSignedIn() && (
+          isStaff()
+          || exists(/databases/$(database)/documents/sellerMembers/$(request.auth.uid + '_' + resource.data.sellerId))
+        ));
+      allow create: if isSignedIn()
+        && exists(/databases/$(database)/documents/sellerMembers/$(request.auth.uid + '_' + request.resource.data.sellerId))
+        && request.resource.data.status == 'draft';
+      allow update: if isSignedIn() && (
+        isModerator()
+        || (
+          exists(/databases/$(database)/documents/sellerMembers/$(request.auth.uid + '_' + resource.data.sellerId))
+          && resource.data.status in ['draft', 'rejected', 'active']
+          && request.resource.data.sellerId == resource.data.sellerId
+        )
+      );
+      allow delete: if false;
+    }
+
+    match /inventory/{inventoryId} {
+      allow read: if isSignedIn() && (
+        isStaff()
+        || exists(/databases/$(database)/documents/sellerMembers/$(request.auth.uid + '_' + resource.data.sellerId))
+      );
+      allow write: if false;
+    }
+
+    match /commissionPlans/{planId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /auditLogs/{logId} {
+      allow read: if isSuperAdmin();
+      allow write: if false;
+    }
+
+    match /platformSettings/{docId} {
+      allow read: if isStaff();
+      allow write: if false;
+    }
+
+    // Phase 2 commerce collections — client writes denied; API uses Admin SDK
+    match /carts/{cartId} {
+      allow read: if isSignedIn() && (
+        resource.data.ownerUid == request.auth.uid || isStaff()
+      );
+      allow write: if false;
+    }
+
+    match /orders/{orderId} {
+      allow read: if isSignedIn() && (
+        resource.data.customerUid == request.auth.uid || isStaff()
+      );
+      allow write: if false;
+    }
+
+    match /sellerOrders/{sellerOrderId} {
+      allow read: if isSignedIn() && (
+        isStaff()
+        || exists(/databases/$(database)/documents/sellerMembers/$(request.auth.uid + '_' + resource.data.sellerId))
+      );
+      allow write: if false;
+    }
+
+    match /payments/{paymentId} {
+      allow read: if isSuperAdmin() || hasPlatformRole('finance_operator');
+      allow write: if false;
+    }
+
+    match /reservations/{reservationId} {
+      allow read: if isStaff();
+      allow write: if false;
+    }
+
+    match /webhookEvents/{eventId} {
+      allow read, write: if false;
+    }
+
+    match /idempotencyRecords/{recordId} {
+      allow read, write: if false;
+    }
+
+    // Phase 3 finance — client writes denied
+    match /sellerLedger/{entryId} {
+      allow read: if isSignedIn() && (
+        isSuperAdmin()
+        || hasPlatformRole('finance_operator')
+        || exists(/databases/$(database)/documents/sellerMembers/$(request.auth.uid + '_' + resource.data.sellerId))
+      );
+      allow write: if false;
+    }
+
+    match /refunds/{refundId} {
+      allow read: if isSignedIn() && (
+        resource.data.customerUid == request.auth.uid
+        || isStaff()
+      );
+      allow write: if false;
+    }
+
+    match /payouts/{payoutId} {
+      allow read: if isSignedIn() && (
+        isSuperAdmin()
+        || hasPlatformRole('finance_operator')
+        || exists(/databases/$(database)/documents/sellerMembers/$(request.auth.uid + '_' + resource.data.sellerId))
+      );
+      allow write: if false;
+    }
+
+    // Phase 4 fulfilment — client writes denied
+    match /shipments/{shipmentId} {
+      allow read: if isSignedIn() && (
+        resource.data.customerUid == request.auth.uid
+        || isStaff()
+        || exists(/databases/$(database)/documents/sellerMembers/$(request.auth.uid + '_' + resource.data.sellerId))
+      );
+      allow write: if false;
+    }
+
+    match /returns/{returnId} {
+      allow read: if isSignedIn() && (
+        resource.data.customerUid == request.auth.uid
+        || isStaff()
+        || exists(/databases/$(database)/documents/sellerMembers/$(request.auth.uid + '_' + resource.data.sellerId))
+      );
+      allow write: if false;
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if isSignedIn() && resource.data.toUid == request.auth.uid;
+      allow write: if false;
+    }
+
+    match /backgroundJobs/{jobId} {
+      allow read, write: if false;
+    }
+
+    match /supportNotes/{noteId} {
+      allow read: if isSignedIn() && (
+        isStaff()
+        || resource.data.visibility == 'customer'
+      );
+      allow write: if false;
+    }
+
+    // Phase 6 — product reviews (API writes only)
+    match /reviews/{reviewId} {
+      allow read: if resource.data.status == 'published'
+        || (isSignedIn() && (
+          resource.data.authorUid == request.auth.uid
+          || isStaff()
+        ));
+      allow write: if false;
+    }
+  }
+}

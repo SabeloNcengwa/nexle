@@ -1,0 +1,38 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isImage() {
+      return request.resource.contentType.matches('image/(jpeg|png|webp)');
+    }
+
+    function under5MB() {
+      return request.resource.size < 5 * 1024 * 1024;
+    }
+
+    // Default deny
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+
+    // Private verification documents — no public read
+    match /sellerApplications/{applicationId}/docs/{uid}/{fileName} {
+      allow read: if isSignedIn() && (request.auth.uid == uid);
+      allow write: if isSignedIn()
+        && request.auth.uid == uid
+        && request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches('application/pdf|image/(jpeg|png)');
+    }
+
+    // Product images under seller path
+    match /sellers/{sellerId}/products/{productId}/{fileName} {
+      allow read: if true; // public catalogue images; path still requires knowing IDs
+      allow write: if isSignedIn() && isImage() && under5MB();
+      // Fine-grained seller membership checks are enforced by the API before issuing uploads.
+    }
+  }
+}

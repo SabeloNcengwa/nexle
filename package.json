@@ -1,0 +1,39 @@
+{
+  "name": "mavundla-marketplace",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Mavundla Marketplace — multi-vendor ecommerce platform",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w @mavundla/shared && npm run build -w @mavundla/api && npm run build -w @mavundla/web",
+    "dev:api": "npm run dev -w @mavundla/api",
+    "dev:web": "npm run dev -w @mavundla/web",
+    "lint": "npm run lint -w @mavundla/shared -w @mavundla/api -w @mavundla/web",
+    "typecheck": "npm run typecheck -w @mavundla/shared -w @mavundla/api -w @mavundla/web",
+    "test": "npm run test -w @mavundla/shared -w @mavundla/api -w @mavundla/web",
+    "test:rules": "npm run test:rules -w @mavundla/api",
+    "emulators": "firebase emulators:start --import=./.emulator-data --export-on-exit=./.emulator-data",
+    "bootstrap:admin": "npm run bootstrap:admin -w @mavundla/api",
+    "validate:prod-env": "node scripts/validate-production-env.mjs",
+    "load:baseline": "node scripts/load/baseline.mjs",
+    "format": "prettier --write \"**/*.{ts,tsx,js,json,md,scss,yml}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,json,md,scss,yml}\""
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^8.24.0",
+    "@typescript-eslint/parser": "^8.24.0",
+    "eslint": "^8.57.1",
+    "eslint-config-prettier": "^10.0.1",
+    "eslint-plugin-react": "^7.37.4",
+    "eslint-plugin-react-hooks": "^5.1.0",
+    "firebase-tools": "^13.31.2",
+    "prettier": "^3.5.1",
+    "typescript": "^5.7.3"
+  }
+}

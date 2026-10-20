@@ -1,0 +1,81 @@
+:root {
+  --color-ink: #1a1a1a;
+  --color-ink-muted: #4a4a4a;
+  --color-surface: #f7f6f4;
+  --color-surface-elevated: #ffffff;
+  --color-brand: #e85d24;
+  --color-brand-deep: #1a1a1a;
+  --color-accent: #c43a1a;
+  --color-line: #e4e2de;
+  --color-danger: #a12828;
+  --color-ok: #1b7a45;
+  --font-display: 'DM Sans', 'Segoe UI', sans-serif;
+  --font-body: 'DM Sans', 'Segoe UI', sans-serif;
+  --shadow-soft: 0 18px 40px rgba(26, 26, 26, 0.08);
+  --radius: 12px;
+  --max: 1120px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-body);
+  color: var(--color-ink);
+  background:
+    radial-gradient(1100px 480px at 8% -8%, rgba(232, 93, 36, 0.14), transparent 58%),
+    radial-gradient(900px 420px at 100% 0%, rgba(196, 58, 26, 0.08), transparent 55%),
+    var(--color-surface);
+  line-height: 1.5;
+}
+
+a {
+  color: var(--color-brand-deep);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  line-height: 1.15;
+  margin: 0 0 0.5rem;
+}
+
+p {
+  margin: 0 0 1rem;
+  color: var(--color-ink-muted);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
