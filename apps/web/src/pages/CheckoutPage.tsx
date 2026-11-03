@@ -9,6 +9,8 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
+import { AddressAutocomplete } from '../components/AddressAutocomplete';
+import { AddressMapPicker, type AddressMapValue } from '../components/AddressMapPicker';
 import { apiFetch } from '../lib/api';
 import styles from '../components/ui.module.scss';
 
@@ -24,7 +26,7 @@ export function CheckoutPage() {
   const { user, profile } = useAuth();
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
-  const [address, setAddress] = useState({
+  const [address, setAddress] = useState<AddressMapValue>({
     line1: '',
     suburb: '',
     city: '',
@@ -41,6 +43,8 @@ export function CheckoutPage() {
       city: saved.city ?? '',
       province: saved.province || 'Gauteng',
       postalCode: saved.postalCode ?? '',
+      lat: saved.lat,
+      lng: saved.lng,
     });
   }, [profile]);
 
@@ -56,7 +60,17 @@ export function CheckoutPage() {
         method: 'POST',
         body: JSON.stringify({
           idempotencyKey: crypto.randomUUID(),
-          shippingAddress: { ...address, country: 'ZA' },
+          shippingAddress: {
+            line1: address.line1,
+            suburb: address.suburb,
+            city: address.city,
+            province: address.province,
+            postalCode: address.postalCode,
+            country: 'ZA' as const,
+            ...(typeof address.lat === 'number' && typeof address.lng === 'number'
+              ? { lat: address.lat, lng: address.lng }
+              : {}),
+          },
         }),
       }),
     onSuccess: (data) => {
@@ -126,14 +140,12 @@ export function CheckoutPage() {
             . Edit here for this order only, or update your saved address on your profile.
           </p>
         )}
-        <label className={styles.field}>
-          Street address
-          <input
-            required
-            value={address.line1}
-            onChange={(e) => setAddress((a) => ({ ...a, line1: e.target.value }))}
-          />
-        </label>
+        <AddressAutocomplete
+          required
+          value={address.line1}
+          onInputChange={(line1) => setAddress((a) => ({ ...a, line1 }))}
+          onSelect={setAddress}
+        />
         <label className={styles.field}>
           Suburb
           <input
@@ -174,6 +186,7 @@ export function CheckoutPage() {
             onChange={(e) => setAddress((a) => ({ ...a, postalCode: e.target.value }))}
           />
         </label>
+        <AddressMapPicker value={address} onChange={setAddress} />
         {error && <p className={styles.error}>{error}</p>}
         <button className={styles.btn} type="submit" disabled={start.isPending || !preview.data}>
           {start.isPending ? 'Reserving stock…' : 'Pay with mock checkout'}

@@ -9,6 +9,9 @@ export const saAddressSchema = z.object({
   province: z.string().min(1).max(100),
   postalCode: z.string().regex(/^\d{4}$/),
   country: z.literal('ZA'),
+  /** Precise map pin (WGS84). Optional for legacy addresses. */
+  lat: z.number().min(-90).max(90).optional(),
+  lng: z.number().min(-180).max(180).optional(),
 });
 
 export type SaAddress = z.infer<typeof saAddressSchema>;

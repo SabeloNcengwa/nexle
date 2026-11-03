@@ -26,6 +26,7 @@ import { reviewsRouter } from './routes/reviews.js';
 import { sellersRouter } from './routes/sellers.js';
 import { uploadsRouter } from './routes/uploads.js';
 import { usersRouter } from './routes/users.js';
+import { geocodeRouter } from './routes/geocode.js';
 
 export function createApp(env: Env) {
   setRuntimeEnv(env);
@@ -123,6 +124,7 @@ export function createApp(env: Env) {
   });
 
   app.use('/v1/users', usersRouter);
+  app.use('/v1/geocode', geocodeRouter);
   app.use('/v1/uploads', uploadsRouter);
   app.use('/v1/sellers', sellersRouter);
   app.use('/v1/catalogue', catalogueRouter);

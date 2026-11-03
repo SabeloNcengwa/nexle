@@ -8,19 +8,14 @@ import {
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
+import { AddressAutocomplete } from '../components/AddressAutocomplete';
+import { AddressMapPicker, type AddressMapValue } from '../components/AddressMapPicker';
 import { apiFetch } from '../lib/api';
 import { firebaseAuth } from '../lib/firebase';
 import styles from '../components/ui.module.scss';
 import { canAccessSellerCentre, isSeller } from '../lib/roleHome';
 
-type AddressForm = {
-  line1: string;
-  line2: string;
-  suburb: string;
-  city: string;
-  province: string;
-  postalCode: string;
-};
+type AddressForm = AddressMapValue & { line2: string };
 
 const emptyAddress = (): AddressForm => ({
   line1: '',
@@ -29,6 +24,8 @@ const emptyAddress = (): AddressForm => ({
   city: '',
   province: 'Gauteng',
   postalCode: '',
+  lat: undefined,
+  lng: undefined,
 });
 
 export function AccountPage() {
@@ -73,6 +70,8 @@ export function AccountPage() {
             city: a.city ?? '',
             province: a.province || 'Gauteng',
             postalCode: a.postalCode ?? '',
+            lat: a.lat,
+            lng: a.lng,
           }
         : emptyAddress(),
     );
@@ -123,6 +122,9 @@ export function AccountPage() {
             province: address.province.trim(),
             postalCode: address.postalCode.trim(),
             country: 'ZA',
+            ...(typeof address.lat === 'number' && typeof address.lng === 'number'
+              ? { lat: address.lat, lng: address.lng }
+              : {}),
           },
         }),
       });
@@ -169,7 +171,7 @@ export function AccountPage() {
   };
 
   return (
-    <div className={styles.stack} style={{ maxWidth: 560 }}>
+    <div className={styles.stack} style={{ maxWidth: 720 }}>
       <div className={styles.panel}>
         <h1>My account</h1>
         {sellerOnlyNotice && !needsAccountType && !canCorrectToSeller && (
@@ -257,15 +259,17 @@ export function AccountPage() {
             onChange={(e) => setPhone(e.target.value)}
           />
         </label>
-        <label className={styles.field}>
-          Street address
-          <input
-            required
-            autoComplete="address-line1"
-            value={address.line1}
-            onChange={(e) => setAddress((a) => ({ ...a, line1: e.target.value }))}
-          />
-        </label>
+        <AddressAutocomplete
+          required
+          value={address.line1}
+          onInputChange={(line1) => setAddress((a) => ({ ...a, line1 }))}
+          onSelect={(next) =>
+            setAddress({
+              ...next,
+              line2: address.line2,
+            })
+          }
+        />
         <label className={styles.field}>
           Apartment / complex (optional)
           <input
@@ -318,6 +322,15 @@ export function AccountPage() {
             onChange={(e) => setAddress((a) => ({ ...a, postalCode: e.target.value }))}
           />
         </label>
+        <AddressMapPicker
+          value={address}
+          onChange={(next) =>
+            setAddress({
+              ...next,
+              line2: next.line2 ?? '',
+            })
+          }
+        />
         <p className={styles.muted}>Country: South Africa</p>
         {contactMessage && <p>{contactMessage}</p>}
         {contactError && <p className={styles.error}>{contactError}</p>}
