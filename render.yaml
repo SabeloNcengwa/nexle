@@ -11,7 +11,7 @@ services:
     runtime: node
     plan: free
     region: frankfurt
-    buildCommand: npm ci --include-workspace-root && npm run build -w @mavundla/shared && npm run build -w @mavundla/api
+    buildCommand: NPM_CONFIG_PRODUCTION=false npm ci --include-workspace-root && npm run build -w @mavundla/shared && npm run build -w @mavundla/api
     startCommand: npm run start -w @mavundla/api
     healthCheckPath: /health
     envVars:
