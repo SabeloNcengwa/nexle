@@ -13,13 +13,37 @@ export const saAddressSchema = z.object({
 
 export type SaAddress = z.infer<typeof saAddressSchema>;
 
+/** South African provinces for delivery / profile forms. */
+export const SA_PROVINCES = [
+  'Eastern Cape',
+  'Free State',
+  'Gauteng',
+  'KwaZulu-Natal',
+  'Limpopo',
+  'Mpumalanga',
+  'North West',
+  'Northern Cape',
+  'Western Cape',
+] as const;
+
 export const userStatusSchema = z.enum(['active', 'suspended']);
 
 export const accountTypeSchema = z.enum(['customer', 'seller']);
 
+const optionalPhone = z
+  .string()
+  .max(20)
+  .optional()
+  .transform((v) => {
+    const t = v?.trim();
+    return t ? t : undefined;
+  });
+
 export const createUserProfileSchema = z.object({
   displayName: z.string().min(1).max(120),
-  phone: z.string().max(20).optional(),
+  phone: optionalPhone,
+  /** Saved delivery / contact address (South Africa). */
+  defaultShippingAddress: saAddressSchema.optional(),
   /** Required on first profile complete (registration); ignored if already set. */
   accountType: accountTypeSchema.optional(),
 });

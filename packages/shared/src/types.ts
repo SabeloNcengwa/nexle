@@ -20,6 +20,8 @@ export interface UserProfile {
   email: string;
   displayName: string;
   phone?: string;
+  /** Default delivery / contact address for checkout and support. */
+  defaultShippingAddress?: SaAddress;
   /** Set once at registration. Missing = legacy (infer from memberships). */
   accountType?: AccountType;
   platformRoles: PlatformRole[];

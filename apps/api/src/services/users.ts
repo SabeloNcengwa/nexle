@@ -21,7 +21,8 @@ export async function getMe(actor: Actor): Promise<MeResponse> {
     uid: actor.uid,
     email: String(data.email ?? actor.email),
     displayName: String(data.displayName ?? actor.displayName),
-    phone: data.phone,
+    phone: typeof data.phone === 'string' ? data.phone : undefined,
+    defaultShippingAddress: data.defaultShippingAddress as MeResponse['defaultShippingAddress'],
     accountType: asAccountType(data.accountType) ?? actor.accountType,
     platformRoles: data.platformRoles ?? [],
     status: data.status ?? 'active',
@@ -61,9 +62,14 @@ export async function updateMe(actor: Actor, body: unknown): Promise<MeResponse>
 
   const patch: Record<string, unknown> = {
     displayName: input.displayName,
-    phone: input.phone,
     updatedAt: new Date().toISOString(),
   };
+  if (input.phone !== undefined) {
+    patch.phone = input.phone;
+  }
+  if (input.defaultShippingAddress) {
+    patch.defaultShippingAddress = input.defaultShippingAddress;
+  }
   if (input.accountType && (!existingType || allowCustomerToSellerCorrection)) {
     patch.accountType = input.accountType;
   }
