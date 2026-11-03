@@ -1,0 +1,65 @@
+# NEXLE API — Node on Render, data on Supabase, Auth on Firebase.
+# Dashboard: New → Blueprint → connect this repo
+# Or: install @render-oss/cli and run `render blueprints launch`
+#
+# Secrets (set in Render; sync: false):
+#   SUPABASE_SERVICE_ROLE_KEY, SUPABASE_DB_URL, FIREBASE_SERVICE_ACCOUNT_JSON, JOBS_SECRET
+
+services:
+  - type: web
+    name: nexle-api
+    runtime: node
+    plan: free
+    region: frankfurt
+    buildCommand: npm ci --include-workspace-root && npm run build -w @mavundla/shared && npm run build -w @mavundla/api
+    startCommand: npm run start -w @mavundla/api
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: NODE_ENV
+        value: production
+      - key: CORS_ORIGIN
+        value: https://nexle-marketplace.web.app,https://nexle-admin.web.app,https://nexle-marketplace.firebaseapp.com
+      - key: WEB_BASE_URL
+        value: https://nexle-marketplace.web.app
+      - key: ADMIN_BASE_URL
+        value: https://nexle-admin.web.app
+      - key: FIREBASE_PROJECT_ID
+        value: nexle-marketplace
+      - key: FIREBASE_STORAGE_BUCKET
+        value: nexle-marketplace.firebasestorage.app
+      - key: SUPABASE_URL
+        value: https://sttgjxiyyyanfvynrqfb.supabase.co
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_DB_URL
+        sync: false
+      - key: FIREBASE_SERVICE_ACCOUNT_JSON
+        sync: false
+      - key: JOBS_SECRET
+        sync: false
+      - key: RESERVATION_EXPIRY_INTERVAL_MS
+        value: "60000"
+      - key: PAYMENT_PROVIDER
+        value: mock
+      - key: ALLOW_MOCK_PAYMENTS
+        value: "true"
+      - key: COURIER_PROVIDER
+        value: mock
+      - key: ALLOW_MOCK_COURIER
+        value: "true"
+      - key: EMAIL_PROVIDER
+        value: mock
+      - key: ALLOW_MOCK_EMAIL
+        value: "true"
+      - key: SMS_PROVIDER
+        value: mock
+      - key: ALLOW_MOCK_SMS
+        value: "true"
+      - key: PILOT_MODE
+        value: "false"
+      - key: MAINTENANCE_MODE
+        value: "false"
+      - key: PUBLIC_LAUNCH
+        value: "false"

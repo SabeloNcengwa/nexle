@@ -36,7 +36,13 @@ export function multiplyCents(amountCents: number, quantity: number): number {
   return amountCents * quantity;
 }
 
-/** percentageBps: 1000 = 10.00% */
+/**
+ * Default Nexle platform fee (Bolt-style): charged on sale subtotal before seller payout.
+ * 800 bps = 8.00%. Customer pays Nexle; seller withdraws 92% of merchandise after the hold.
+ */
+export const DEFAULT_PLATFORM_COMMISSION_BPS = 800;
+
+/** percentageBps: 1000 = 10.00%, 800 = 8.00% */
 export function calculatePercentageCents(
   amountCents: number,
   percentageBps: number,

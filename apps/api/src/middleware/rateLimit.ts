@@ -8,8 +8,13 @@ interface Bucket {
 
 const buckets = new Map<string, Bucket>();
 
+function clientKey(req: Request): string {
+  const uid = req.actor?.uid;
+  return uid ? `uid:${uid}` : `ip:${req.ip ?? 'unknown'}`;
+}
+
 /** Basic in-memory rate limiter. Replace with managed edge limiter before scale-out. */
-export function rateLimit(options: { windowMs: number; max: number }) {
+export function rateLimit(options: { windowMs: number; max: number; keyPrefix?: string }) {
   return (req: Request, _res: Response, next: NextFunction): void => {
     // Probes must stay reachable for orchestration / load harnesses.
     if (req.path === '/health' || req.path === '/ready') {
@@ -17,7 +22,8 @@ export function rateLimit(options: { windowMs: number; max: number }) {
       return;
     }
 
-    const key = `${req.ip ?? 'unknown'}:${req.path}`;
+    const prefix = options.keyPrefix ?? req.path;
+    const key = `${clientKey(req)}:${prefix}`;
     const now = Date.now();
     const existing = buckets.get(key);
 
@@ -35,3 +41,10 @@ export function rateLimit(options: { windowMs: number; max: number }) {
     next();
   };
 }
+
+/** Stricter limits for money-moving endpoints (confirm, payouts, refunds, mock pay). */
+export const moneyRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 30,
+  keyPrefix: 'money',
+});

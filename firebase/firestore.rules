@@ -72,12 +72,14 @@ service cloud.firestore {
     }
 
     match /sellers/{sellerId} {
+      // Client reads allowed for members; payoutBank digits must only be mutated via API
+      // (Admin SDK). Prefer API responses which mask account numbers.
       allow read: if isSignedIn() && (
         resource.data.ownerUid == request.auth.uid
         || isStaff()
         || exists(/databases/$(database)/documents/sellerMembers/$(request.auth.uid + '_' + sellerId))
       );
-      allow write: if false; // Admin SDK / privileged server only
+      allow write: if false; // Admin SDK / privileged server only — never client money writes
     }
 
     match /sellerMembers/{memberId} {
@@ -160,6 +162,7 @@ service cloud.firestore {
     }
 
     match /payments/{paymentId} {
+      // Payment records are server-only; customers use /v1/orders + /v1/payments/confirm
       allow read: if isSuperAdmin() || hasPlatformRole('finance_operator');
       allow write: if false;
     }

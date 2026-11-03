@@ -6,8 +6,10 @@ import {
   type Actor,
   type Payout,
 } from '@mavundla/shared';
+import type { DocData } from '../db/types.js';
 import { db } from '../config/firebase.js';
 import { AppError } from '../lib/errors.js';
+import { maskAccountNumber } from '../lib/moneySecurity.js';
 import {
   assertSellerPermission,
   requireAuthenticatedUser,
@@ -21,7 +23,10 @@ import { getSellerBalances, postPayoutLedgerEntries, releasePendingToEligible } 
 const DEFAULT_MIN_PAYOUT_CENTS = 1000;
 const DEFAULT_HOLD_DAYS = 7;
 
-function mapPayout(id: string, data: FirebaseFirestore.DocumentData): Payout {
+function mapPayout(id: string, data: DocData): Payout {
+  const bank = data.destinationBank as
+    | { accountName: string; bankName: string; accountNumber: string; branchCode?: string }
+    | undefined;
   return {
     id,
     sellerId: String(data.sellerId),
@@ -33,6 +38,14 @@ function mapPayout(id: string, data: FirebaseFirestore.DocumentData): Payout {
     requestedByUid: String(data.requestedByUid),
     reviewedByUid: data.reviewedByUid,
     decisionReason: data.decisionReason,
+    destinationBank: bank
+      ? {
+          accountName: bank.accountName,
+          bankName: bank.bankName,
+          accountNumber: maskAccountNumber(bank.accountNumber),
+          branchCode: bank.branchCode,
+        }
+      : undefined,
     createdAt: data.createdAt,
     updatedAt: data.updatedAt,
     paidAt: data.paidAt,
@@ -116,6 +129,16 @@ export async function requestPayout(actor: Actor | undefined, body: unknown): Pr
   const sellerSnap = await db().collection('sellers').doc(input.sellerId).get();
   if (!sellerSnap.exists) throw new AppError('NOT_FOUND', 'Seller not found', 404);
   const seller = sellerSnap.data()!;
+  const payoutBank = seller.payoutBank as
+    | { accountName: string; bankName: string; accountNumber: string; branchCode?: string }
+    | undefined;
+  if (!payoutBank?.accountNumber || !payoutBank.bankName || !payoutBank.accountName) {
+    throw new AppError(
+      'PAYOUT_BANK_REQUIRED',
+      'Add your business bank details before withdrawing. Nexle pays out your net proceeds (after the 8% platform fee) to that account.',
+      400,
+    );
+  }
   const balances = await getSellerBalances(input.sellerId);
   const settings = await financeSettings();
 
@@ -139,6 +162,13 @@ export async function requestPayout(actor: Actor | undefined, body: unknown): Pr
     status: 'eligible',
     idempotencyKey: input.idempotencyKey,
     requestedByUid: actor.uid,
+    /** Snapshot of destination — amount is already net of platform commission. */
+    destinationBank: {
+      accountName: payoutBank.accountName,
+      bankName: payoutBank.bankName,
+      accountNumber: payoutBank.accountNumber,
+      branchCode: payoutBank.branchCode,
+    },
     createdAt: nowIso,
     updatedAt: nowIso,
   };

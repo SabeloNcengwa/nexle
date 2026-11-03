@@ -1,10 +1,11 @@
 import { upsertCommissionPlanSchema, type Actor, type CommissionPlan } from '@mavundla/shared';
+import type { DocData } from '../db/types.js';
 import { db } from '../config/firebase.js';
 import { AppError } from '../lib/errors.js';
 import { requirePlatformPermission } from '../permissions/helpers.js';
 import { writeAuditLog } from './audit.js';
 
-function mapPlan(id: string, data: FirebaseFirestore.DocumentData): CommissionPlan {
+function mapPlan(id: string, data: DocData): CommissionPlan {
   return {
     id,
     name: String(data.name),

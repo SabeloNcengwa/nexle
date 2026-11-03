@@ -7,7 +7,12 @@ function prodBase(overrides: Record<string, string> = {}) {
     NODE_ENV: 'production',
     PORT: '8080',
     CORS_ORIGIN: 'https://pilot.example',
+    WEB_BASE_URL: 'https://pilot.example',
+    ADMIN_BASE_URL: 'https://admin.pilot.example',
     JOBS_SECRET: 'abcdefghijklmnopqrstuvwxyz',
+    SUPABASE_URL: 'https://sttgjxiyyyanfvynrqfb.supabase.co',
+    SUPABASE_SERVICE_ROLE_KEY: 'test-service-role-key',
+    SUPABASE_DB_URL: 'postgresql://postgres:test@127.0.0.1:5432/postgres',
     PAYMENT_PROVIDER: 'mock',
     ALLOW_MOCK_PAYMENTS: 'true',
     COURIER_PROVIDER: 'mock',
@@ -37,6 +42,18 @@ describe('assertProductionSafe', () => {
     expect(() => assertProductionSafe(prodBase({ CORS_ORIGIN: '*' }))).toThrow(
       ProductionConfigError,
     );
+  });
+
+  it('rejects cleartext non-localhost CORS in production', () => {
+    expect(() =>
+      assertProductionSafe(prodBase({ CORS_ORIGIN: 'http://evil.example' })),
+    ).toThrow(ProductionConfigError);
+  });
+
+  it('rejects cleartext WEB_BASE_URL in production', () => {
+    expect(() =>
+      assertProductionSafe(prodBase({ WEB_BASE_URL: 'http://shop.example' })),
+    ).toThrow(ProductionConfigError);
   });
 
   it('rejects mock payments without allow flag', () => {

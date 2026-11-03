@@ -1,4 +1,5 @@
 import { supportNoteSchema, type Actor, type SupportNote } from '@mavundla/shared';
+import type { DocData } from '../db/types.js';
 import { db } from '../config/firebase.js';
 import { AppError } from '../lib/errors.js';
 import {
@@ -12,7 +13,7 @@ import { listExceptionShipments } from './shipments.js';
 import { listReturnQueue } from './returns.js';
 import { listRefundQueue } from './refunds.js';
 
-function mapNote(id: string, data: FirebaseFirestore.DocumentData): SupportNote {
+function mapNote(id: string, data: DocData): SupportNote {
   return {
     id,
     resourceType: data.resourceType,

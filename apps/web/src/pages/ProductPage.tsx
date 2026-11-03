@@ -11,6 +11,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
 import { apiFetch } from '../lib/api';
 import styles from '../components/ui.module.scss';
+import pdp from './ProductPage.module.scss';
 
 type ProductDetail = Product & {
   availability?: Array<{ sku: string; available: number }>;
@@ -94,43 +95,49 @@ export function ProductPage() {
 
   return (
     <article className={styles.stack}>
-      <Link to="/browse">← Back to browse</Link>
-      <div className={styles.panel}>
-        <span className={styles.badge}>{p.status}</span>
-        <h1>{p.title}</h1>
-        <p className={styles.muted}>
-          {summary.count > 0
-            ? `${formatAverageRating(summary)} ★ · ${summary.count} review${summary.count === 1 ? '' : 's'}`
-            : 'No reviews yet'}
-        </p>
-        <p>{p.description}</p>
-        <p>
-          <strong>{formatZarFromCents(price)}</strong>
-        </p>
-        <h2>Variants & stock</h2>
-        <ul className={styles.stack}>
-          {p.variants.map((v) => {
-            const avail = p.availability?.find((a) => a.sku === v.sku)?.available;
-            return (
-              <li key={v.sku} className={styles.row}>
-                <div style={{ flex: 1 }}>
-                  {v.title} ({v.sku}) — {formatZarFromCents(v.priceCents)}
-                  {typeof avail === 'number' ? ` · ${avail} available` : ''}
+      <Link to="/browse" className={styles.sectionLink}>
+        ← Back to results
+      </Link>
+      <div className={pdp.layout}>
+        <div className={pdp.media}>Nexle</div>
+        <div className={pdp.buyBox}>
+          <span className={styles.badgeMuted}>{p.brand || 'Marketplace seller'}</span>
+          <h1 style={{ margin: 0, fontSize: '1.45rem' }}>{p.title}</h1>
+          <p className={styles.muted} style={{ margin: 0 }}>
+            {summary.count > 0
+              ? `${formatAverageRating(summary)} / 5 · ${summary.count} review${summary.count === 1 ? '' : 's'}`
+              : 'No reviews yet'}
+          </p>
+          <p className={pdp.price}>{formatZarFromCents(price)}</p>
+          <p style={{ margin: 0 }}>{p.description}</p>
+          <div>
+            <h2 style={{ fontSize: '1rem', marginBottom: '0.35rem' }}>Options</h2>
+            {p.variants.map((v) => {
+              const avail = p.availability?.find((a) => a.sku === v.sku)?.available;
+              return (
+                <div key={v.sku} className={pdp.variantRow}>
+                  <div>
+                    <strong>{v.title}</strong>
+                    <div className={styles.muted}>
+                      {formatZarFromCents(v.priceCents)}
+                      {typeof avail === 'number' ? ` · ${avail} in stock` : ''}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className={styles.btn}
+                    disabled={add.isPending || avail === 0}
+                    onClick={() => add.mutate(v.sku)}
+                  >
+                    Add to cart
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  className={styles.btn}
-                  disabled={add.isPending || avail === 0}
-                  onClick={() => add.mutate(v.sku)}
-                >
-                  Add to cart
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-        {message && <p>{message}</p>}
-        {error && <p className={styles.error}>{error}</p>}
+              );
+            })}
+          </div>
+          {message && <p>{message}</p>}
+          {error && <p className={styles.error}>{error}</p>}
+        </div>
       </div>
 
       <section className={styles.panel}>

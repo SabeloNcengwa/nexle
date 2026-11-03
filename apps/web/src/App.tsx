@@ -8,24 +8,38 @@ import { SignInPage } from './pages/SignInPage';
 import { RegisterPage } from './pages/RegisterPage';
 import { AccountPage } from './pages/AccountPage';
 import { SellerCentrePage } from './pages/SellerCentrePage';
-import { AdminPage } from './pages/AdminPage';
 import { CartPage } from './pages/CartPage';
 import { CheckoutPage } from './pages/CheckoutPage';
 import { MockPayPage } from './pages/MockPayPage';
 import { OrderDetailPage, OrdersListPage } from './pages/OrdersPage';
+import { canAccessSellerCentre } from './lib/roleHome';
 import type { ReactNode } from 'react';
 
 function Protected({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
   if (loading) return <p>Loading…</p>;
-  if (!user) return <Navigate to="/auth/sign-in" replace />;
+  if (!user) {
+    const next = encodeURIComponent(
+      typeof window !== 'undefined' ? `${window.location.pathname}${window.location.search}` : '/',
+    );
+    return <Navigate to={`/auth/sign-in?next=${next}`} replace />;
+  }
   return children;
 }
 
-function AdminOnly({ children }: { children: ReactNode }) {
-  const { profile, loading } = useAuth();
+/** Customers cannot open Seller Centre — redirect to account. */
+function SellerOnly({ children }: { children: ReactNode }) {
+  const { user, profile, memberships, loading } = useAuth();
   if (loading) return <p>Loading…</p>;
-  if (!profile?.platformRoles?.length) return <Navigate to="/" replace />;
+  if (!user) {
+    const next = encodeURIComponent(
+      typeof window !== 'undefined' ? `${window.location.pathname}${window.location.search}` : '/seller',
+    );
+    return <Navigate to={`/auth/sign-in?next=${next}`} replace />;
+  }
+  if (!canAccessSellerCentre(profile, memberships)) {
+    return <Navigate to="/account?notice=seller-only" replace />;
+  }
   return children;
 }
 
@@ -65,25 +79,15 @@ export function App() {
             </Protected>
           }
         />
-        <Route
-          path="seller/*"
-          element={
-            <Protected>
-              <SellerCentrePage />
-            </Protected>
-          }
-        />
-        <Route
-          path="admin/*"
-          element={
-            <Protected>
-              <AdminOnly>
-                <AdminPage />
-              </AdminOnly>
-            </Protected>
-          }
-        />
       </Route>
+      <Route
+        path="seller/*"
+        element={
+          <SellerOnly>
+            <SellerCentrePage />
+          </SellerOnly>
+        }
+      />
     </Routes>
   );
 }

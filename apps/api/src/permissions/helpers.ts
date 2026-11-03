@@ -63,3 +63,15 @@ export function assertFinancePermission(actor: Actor | undefined): void {
 export function hasPlatformRole(actor: Actor, roles: PlatformRole[]): boolean {
   return roles.some((role) => actor.platformRoles.includes(role));
 }
+
+/** Seller Centre / applications — explicit customer accounts are blocked. */
+export function assertSellerAccount(actor: Actor | undefined): asserts actor is Actor {
+  requireAuthenticatedUser(actor);
+  if (actor.accountType === 'customer') {
+    throw new AppError(
+      'SELLER_ACCOUNT_REQUIRED',
+      'This is a customer account. Register a seller account to access Seller Centre.',
+      403,
+    );
+  }
+}

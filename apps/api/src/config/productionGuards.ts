@@ -22,9 +22,46 @@ export function assertProductionSafe(env: Env): void {
     problems.push('JOBS_SECRET must be set and at least 16 characters in production');
   }
 
-  const origins = env.CORS_ORIGIN.split(',').map((s) => s.trim());
+  if (!env.SUPABASE_DB_URL) {
+    problems.push('SUPABASE_DB_URL is required in production (Supabase Postgres)');
+  }
+  if (!env.SUPABASE_SERVICE_ROLE_KEY) {
+    problems.push('SUPABASE_SERVICE_ROLE_KEY is required in production');
+  }
+  if (!env.SUPABASE_URL?.startsWith('https://')) {
+    problems.push('SUPABASE_URL must be https in production');
+  }
+
+  const origins = env.CORS_ORIGIN.split(',').map((s) => s.trim()).filter(Boolean);
+  if (origins.length === 0) {
+    problems.push('CORS_ORIGIN must list at least one exact origin in production');
+  }
   if (origins.includes('*')) {
     problems.push('CORS_ORIGIN must not be * in production');
+  }
+  for (const origin of origins) {
+    if (origin.startsWith('http://') && !origin.includes('localhost') && !origin.includes('127.0.0.1')) {
+      problems.push(`CORS_ORIGIN ${origin} must use https in production (non-localhost)`);
+    }
+  }
+  if (!env.WEB_BASE_URL.startsWith('https://') && !env.WEB_BASE_URL.includes('localhost')) {
+    problems.push('WEB_BASE_URL must be https in production');
+  }
+  if (!env.ADMIN_BASE_URL.startsWith('https://') && !env.ADMIN_BASE_URL.includes('localhost')) {
+    problems.push('ADMIN_BASE_URL must be https in production');
+  }
+  if (env.PUBLIC_LAUNCH) {
+    for (const origin of origins) {
+      if (!origin.startsWith('https://')) {
+        problems.push(`PUBLIC_LAUNCH requires https CORS origin (got ${origin})`);
+      }
+    }
+    if (!env.WEB_BASE_URL.startsWith('https://')) {
+      problems.push('PUBLIC_LAUNCH requires https WEB_BASE_URL');
+    }
+    if (!env.ADMIN_BASE_URL.startsWith('https://')) {
+      problems.push('PUBLIC_LAUNCH requires https ADMIN_BASE_URL');
+    }
   }
 
   if (env.PAYMENT_PROVIDER === 'mock' && env.ALLOW_MOCK_PAYMENTS !== 'true') {

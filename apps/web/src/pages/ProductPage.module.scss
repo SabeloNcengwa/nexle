@@ -1,0 +1,58 @@
+.layout {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(280px, 1.05fr);
+  gap: 1.1rem;
+  align-items: start;
+}
+
+.media {
+  background:
+    radial-gradient(180px 120px at 70% 20%, rgba(232, 93, 36, 0.16), transparent 70%),
+    linear-gradient(160deg, #fff 0%, #f6f1eb 100%);
+  border: 1px solid var(--color-line);
+  border-radius: 24px;
+  aspect-ratio: 1 / 1;
+  display: grid;
+  place-items: center;
+  color: #8a8178;
+  font-family: var(--font-display);
+  font-weight: 650;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  box-shadow: var(--shadow-soft);
+}
+
+.buyBox {
+  background: #fff;
+  border: 1px solid var(--color-line);
+  border-radius: 24px;
+  padding: 1.35rem;
+  display: grid;
+  gap: 0.85rem;
+  box-shadow: var(--shadow-soft);
+}
+
+.price {
+  font-family: var(--font-display);
+  font-size: 2.15rem;
+  font-weight: 650;
+  letter-spacing: -0.04em;
+  margin: 0;
+  color: var(--color-ink);
+}
+
+.variantRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.65rem 0;
+  border-top: 1px solid var(--color-line);
+}
+
+@media (max-width: 800px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+}

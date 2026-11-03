@@ -10,6 +10,7 @@ import {
   type InventoryRecord,
   type Product,
 } from '@mavundla/shared';
+import type { DocData } from '../db/types.js';
 import type { Actor } from '@mavundla/shared';
 import { db } from '../config/firebase.js';
 import { AppError } from '../lib/errors.js';
@@ -23,7 +24,7 @@ import {
 } from '../permissions/helpers.js';
 import { writeAuditLog } from './audit.js';
 
-function mapProduct(id: string, data: FirebaseFirestore.DocumentData): Product {
+function mapProduct(id: string, data: DocData): Product {
   return {
     id,
     sellerId: String(data.sellerId),
@@ -45,7 +46,7 @@ function mapProduct(id: string, data: FirebaseFirestore.DocumentData): Product {
   };
 }
 
-function mapInventory(id: string, data: FirebaseFirestore.DocumentData): InventoryRecord {
+function mapInventory(id: string, data: DocData): InventoryRecord {
   return {
     id,
     productId: String(data.productId),
@@ -92,7 +93,7 @@ export async function upsertCategory(
 }
 
 export async function listCategories(includeInactive = false): Promise<Category[]> {
-  let query: FirebaseFirestore.Query = db().collection('categories');
+  let query: import("../db/store.js").Query = db().collection('categories');
   if (!includeInactive) {
     query = query.where('isActive', '==', true);
   }
@@ -314,7 +315,7 @@ export async function searchProducts(query: unknown): Promise<{
   nextCursor: string | null;
 }> {
   const input = productSearchQuerySchema.parse(query);
-  let q: FirebaseFirestore.Query = db()
+  let q: import("../db/store.js").Query = db()
     .collection('products')
     .where('status', '==', 'active');
 
@@ -426,7 +427,7 @@ export async function listInventory(
 ): Promise<InventoryRecord[]> {
   requireAuthenticatedUser(actor);
   assertSellerPermission(actor, sellerId, 'seller:manage_inventory');
-  let q: FirebaseFirestore.Query = db().collection('inventory').where('sellerId', '==', sellerId);
+  let q: import("../db/store.js").Query = db().collection('inventory').where('sellerId', '==', sellerId);
   if (productId) {
     q = q.where('productId', '==', productId);
   }

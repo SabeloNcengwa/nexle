@@ -1,7 +1,9 @@
 import { Router } from 'express';
 import { asyncHandler } from '../lib/asyncHandler.js';
 import { AppError } from '../lib/errors.js';
+import { getRuntimeEnv } from '../config/runtime.js';
 import { requireAuth } from '../middleware/auth.js';
+import { requireWebhookIpAllowlist } from '../middleware/networkSecurity.js';
 import { getCourierProvider, MockCourierProvider } from '../providers/courier/index.js';
 import * as notifications from '../services/notifications.js';
 import * as returns from '../services/returns.js';
@@ -97,6 +99,7 @@ fulfilmentRouter.post(
 
 fulfilmentRouter.post(
   '/courier/webhook',
+  (req, res, next) => requireWebhookIpAllowlist(getRuntimeEnv())(req, res, next),
   asyncHandler(async (req, res) => {
     const courier = getCourierProvider();
     const event = await courier.validateWebhook(req.headers as Record<string, string>, req.body);

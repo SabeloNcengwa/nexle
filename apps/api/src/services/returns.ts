@@ -7,6 +7,7 @@ import {
   type ReturnRequest,
   type SaAddress,
 } from '@mavundla/shared';
+import type { DocData } from '../db/types.js';
 import { db } from '../config/firebase.js';
 import { AppError } from '../lib/errors.js';
 import {
@@ -23,7 +24,7 @@ import { enqueueNotification } from './notifications.js';
 import { getOrderDocument } from './orders.js';
 import { requestRefund } from './refunds.js';
 
-function mapReturn(id: string, data: FirebaseFirestore.DocumentData): ReturnRequest {
+function mapReturn(id: string, data: DocData): ReturnRequest {
   return {
     id,
     orderId: String(data.orderId),

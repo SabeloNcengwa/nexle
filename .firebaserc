@@ -1,5 +1,18 @@
 {
   "projects": {
-    "default": "demo-mavundla"
-  }
+    "default": "nexle-marketplace"
+  },
+  "targets": {
+    "nexle-marketplace": {
+      "hosting": {
+        "web": [
+          "nexle-marketplace"
+        ],
+        "admin": [
+          "nexle-admin"
+        ]
+      }
+    }
+  },
+  "etags": {}
 }

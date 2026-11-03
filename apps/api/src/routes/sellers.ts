@@ -55,6 +55,24 @@ sellersRouter.get(
   }),
 );
 
+sellersRouter.get(
+  '/applications/:applicationId',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const data = await sellers.getApplication(req.actor, req.params.applicationId!);
+    res.json({ data });
+  }),
+);
+
+sellersRouter.get(
+  '/applications/:applicationId/documents',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const data = await sellers.getApplicationDocumentLinks(req.actor, req.params.applicationId!);
+    res.json({ data });
+  }),
+);
+
 sellersRouter.post(
   '/applications/:applicationId/start-review',
   requireAuth,
@@ -75,8 +93,9 @@ sellersRouter.post(
 
 sellersRouter.get(
   '/:sellerId',
+  requireAuth,
   asyncHandler(async (req, res) => {
-    const data = await sellers.getSeller(req.params.sellerId!);
+    const data = await sellers.getSellerForMember(req.actor, req.params.sellerId!);
     res.json({ data });
   }),
 );
@@ -93,6 +112,18 @@ sellersRouter.post(
       return;
     }
     const data = await sellers.setSellerStatus(req.actor, req.params.sellerId!, status);
+    res.json({ data });
+  }),
+);
+
+sellersRouter.put(
+  '/:sellerId/payout-bank',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const data = await sellers.updateSellerPayoutBank(req.actor, {
+      sellerId: req.params.sellerId,
+      payoutBank: req.body,
+    });
     res.json({ data });
   }),
 );

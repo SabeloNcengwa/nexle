@@ -2,6 +2,7 @@ import { releaseSellerEligibilitySchema } from '@mavundla/shared';
 import { Router } from 'express';
 import { asyncHandler } from '../lib/asyncHandler.js';
 import { requireAuth } from '../middleware/auth.js';
+import { moneyRateLimit } from '../middleware/rateLimit.js';
 import {
   assertSellerPermission,
   hasPlatformRole,
@@ -17,6 +18,7 @@ export const financeRouter = Router();
 financeRouter.post(
   '/refunds',
   requireAuth,
+  moneyRateLimit,
   asyncHandler(async (req, res) => {
     const data = await refunds.requestRefund(req.actor, req.body);
     res.status(201).json({ data });
@@ -26,6 +28,7 @@ financeRouter.post(
 financeRouter.post(
   '/refunds/review',
   requireAuth,
+  moneyRateLimit,
   asyncHandler(async (req, res) => {
     const data = await refunds.reviewRefund(req.actor, req.body);
     res.json({ data });
@@ -35,6 +38,7 @@ financeRouter.post(
 financeRouter.post(
   '/refunds/:refundId/submit-provider',
   requireAuth,
+  moneyRateLimit,
   asyncHandler(async (req, res) => {
     const webBaseUrl = (req.app.get('webBaseUrl') as string) || 'http://localhost:5173';
     const data = await refunds.submitRefundToProvider(req.actor, req.params.refundId!, webBaseUrl);
@@ -45,6 +49,7 @@ financeRouter.post(
 financeRouter.post(
   '/refunds/:refundId/reconcile',
   requireAuth,
+  moneyRateLimit,
   asyncHandler(async (req, res) => {
     const webBaseUrl = (req.app.get('webBaseUrl') as string) || 'http://localhost:5173';
     const data = await refunds.reconcileRefundWithProvider(
@@ -93,6 +98,7 @@ financeRouter.get(
 financeRouter.post(
   '/eligibility/release',
   requireAuth,
+  moneyRateLimit,
   asyncHandler(async (req, res) => {
     const input = releaseSellerEligibilitySchema.parse(req.body);
     const data = await payouts.autoReleaseEligibleForSeller(
@@ -107,6 +113,7 @@ financeRouter.post(
 financeRouter.post(
   '/payouts',
   requireAuth,
+  moneyRateLimit,
   asyncHandler(async (req, res) => {
     const data = await payouts.requestPayout(req.actor, req.body);
     res.status(201).json({ data });
@@ -116,6 +123,7 @@ financeRouter.post(
 financeRouter.post(
   '/payouts/review',
   requireAuth,
+  moneyRateLimit,
   asyncHandler(async (req, res) => {
     const webBaseUrl = (req.app.get('webBaseUrl') as string) || 'http://localhost:5173';
     const data = await payouts.reviewPayout(req.actor, req.body, webBaseUrl);
@@ -126,6 +134,7 @@ financeRouter.post(
 financeRouter.post(
   '/payouts/:payoutId/reconcile',
   requireAuth,
+  moneyRateLimit,
   asyncHandler(async (req, res) => {
     const webBaseUrl = (req.app.get('webBaseUrl') as string) || 'http://localhost:5173';
     const data = await payouts.reconcilePayoutWithProvider(

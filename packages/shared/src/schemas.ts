@@ -15,9 +15,13 @@ export type SaAddress = z.infer<typeof saAddressSchema>;
 
 export const userStatusSchema = z.enum(['active', 'suspended']);
 
+export const accountTypeSchema = z.enum(['customer', 'seller']);
+
 export const createUserProfileSchema = z.object({
   displayName: z.string().min(1).max(120),
   phone: z.string().max(20).optional(),
+  /** Required on first profile complete (registration); ignored if already set. */
+  accountType: accountTypeSchema.optional(),
 });
 
 export const applicationStatusSchema = z.enum([
@@ -28,7 +32,28 @@ export const applicationStatusSchema = z.enum([
   'rejected',
 ]);
 
+export const sellerDocumentKindSchema = z.enum([
+  'cipc_registration',
+  'director_id',
+  'proof_of_address',
+  'bank_confirmation',
+  'signed_merchant_contract',
+  'vat_certificate',
+]);
+
+export type SellerDocumentKind = z.infer<typeof sellerDocumentKindSchema>;
+
+/** Required company documents before a seller application can be submitted. */
+export const REQUIRED_SELLER_DOCUMENT_KINDS = [
+  'cipc_registration',
+  'director_id',
+  'proof_of_address',
+  'bank_confirmation',
+  'signed_merchant_contract',
+] as const satisfies readonly SellerDocumentKind[];
+
 export const documentRefSchema = z.object({
+  kind: sellerDocumentKindSchema,
   path: z.string().min(1),
   fileName: z.string().min(1),
   contentType: z.string().min(1),
@@ -43,7 +68,7 @@ export const upsertSellerApplicationSchema = z.object({
   contactEmail: z.string().email(),
   contactPhone: z.string().min(7).max(20),
   businessAddress: saAddressSchema,
-  documentRefs: z.array(documentRefSchema).max(10).default([]),
+  documentRefs: z.array(documentRefSchema).max(12).default([]),
   sellerAgreementVersion: z.string().min(1).max(40),
 });
 
@@ -56,6 +81,21 @@ export const reviewSellerApplicationSchema = z.object({
   decision: z.enum(['approved', 'rejected']),
   reason: z.string().max(1000).optional(),
   commissionPlanId: z.string().min(1).optional(),
+});
+
+export const sellerPayoutBankSchema = z.object({
+  accountName: z.string().min(2).max(120),
+  bankName: z.string().min(2).max(120),
+  accountNumber: z.string().regex(/^\d{6,16}$/, 'Account number must be 6–16 digits'),
+  branchCode: z
+    .string()
+    .regex(/^\d{6}$/)
+    .optional(),
+});
+
+export const updateSellerPayoutBankSchema = z.object({
+  sellerId: z.string().min(1),
+  payoutBank: sellerPayoutBankSchema,
 });
 
 export const productStatusSchema = z.enum([
@@ -170,6 +210,11 @@ export const checkoutSchema = z.object({
 export const mockPaymentCompleteSchema = z.object({
   providerRef: z.string().min(1),
   outcome: z.enum(['succeeded', 'failed']).default('succeeded'),
+});
+
+/** Customer return-URL / client confirm — races provider webhook. */
+export const confirmPaymentSchema = z.object({
+  orderId: z.string().min(1),
 });
 
 export const createRefundRequestSchema = z.object({

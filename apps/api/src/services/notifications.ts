@@ -5,13 +5,14 @@ import {
   type NotificationRecord,
   type NotificationTemplate,
 } from '@mavundla/shared';
+import type { DocData } from '../db/types.js';
 import { db } from '../config/firebase.js';
 import { AppError } from '../lib/errors.js';
 import { getEmailProvider, getSmsProvider } from '../providers/notifications/index.js';
 
 const MAX_ATTEMPTS = 5;
 
-function mapNotification(id: string, data: FirebaseFirestore.DocumentData): NotificationRecord {
+function mapNotification(id: string, data: DocData): NotificationRecord {
   return {
     id,
     template: data.template,

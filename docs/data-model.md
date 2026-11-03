@@ -2,9 +2,11 @@
 
 Monetary amounts are stored as **integer cents** with currency **ZAR**. Never use floating-point for money.
 
-Server timestamps (`FieldValue.serverTimestamp()`) are authoritative for create/update/decision events.
+**Persistence:** Supabase Postgres (document tables: `id` + `data` jsonb per former Firestore collection). See [`supabase/migrations/20261103140000_init_nexle.sql`](../supabase/migrations/20261103140000_init_nexle.sql) and [`docs/supabase-setup.md`](supabase-setup.md). **Auth** remains Firebase; **uploads** use Supabase Storage buckets `seller-docs` and `product-images`.
 
-## Collections (Phase 1 implemented)
+ISO-8601 timestamps written by the API are authoritative for create/update/decision events.
+
+## Collections (logical names — Postgres tables use snake_case)
 
 ### `users/{uid}`
 

@@ -1,13 +1,14 @@
 import {
   formatZarFromCents,
   type Order,
+  type PaymentAttempt,
   type Refund,
   type ReturnRequest,
   type Shipment,
 } from '@mavundla/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { apiFetch } from '../lib/api';
 import styles from '../components/ui.module.scss';
 
@@ -38,16 +39,34 @@ export function OrdersListPage() {
   );
 }
 
+type ConfirmResult = {
+  order: Order;
+  payment: PaymentAttempt;
+  duplicate: boolean;
+  pending: boolean;
+};
+
 export function OrderDetailPage() {
   const { orderId } = useParams();
+  const [params, setSearchParams] = useSearchParams();
   const qc = useQueryClient();
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const confirmStarted = useRef(false);
+
+  const paymentReturn =
+    params.get('payment') === 'return' || Boolean(params.get('reference'));
 
   const order = useQuery({
     queryKey: ['order', orderId],
     enabled: Boolean(orderId),
     queryFn: () => apiFetch<Order>(`/v1/orders/${orderId}`),
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      if (paymentReturn && status === 'pending_payment') return 1500;
+      return false;
+    },
   });
 
   const refunds = useQuery({
@@ -67,6 +86,66 @@ export function OrderDetailPage() {
     enabled: Boolean(orderId),
     queryFn: () => apiFetch<Shipment[]>(`/v1/fulfilment/shipments/by-order/${orderId}`),
   });
+
+  useEffect(() => {
+    if (!orderId || !paymentReturn || confirmStarted.current) return;
+    confirmStarted.current = true;
+    setConfirming(true);
+    setMessage('Confirming payment…');
+    setError(null);
+
+    const startedAt = Date.now();
+    const maxMs = 30_000;
+
+    const run = async () => {
+      try {
+        while (Date.now() - startedAt < maxMs) {
+          const result = await apiFetch<ConfirmResult>('/v1/payments/confirm', {
+            method: 'POST',
+            body: JSON.stringify({ orderId }),
+          });
+          await qc.invalidateQueries({ queryKey: ['order', orderId] });
+
+          if (result.order.status === 'paid' || result.payment.status === 'succeeded') {
+            setMessage('Paid — seller can ship. Fulfilment unlocked.');
+            setConfirming(false);
+            setSearchParams({}, { replace: true });
+            return;
+          }
+          if (
+            result.order.status === 'payment_failed' ||
+            result.order.status === 'cancelled' ||
+            result.payment.status === 'failed' ||
+            result.payment.status === 'cancelled'
+          ) {
+            setError('Payment did not succeed. You can try checkout again from your cart.');
+            setMessage(null);
+            setConfirming(false);
+            setSearchParams({}, { replace: true });
+            return;
+          }
+          // Still pending at provider — short wait then re-verify
+          await new Promise((r) => setTimeout(r, 1500));
+        }
+        setMessage('Still confirming with the payment provider. This page will keep checking.');
+        setConfirming(false);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Could not confirm payment');
+        setMessage(null);
+        setConfirming(false);
+      }
+    };
+
+    void run();
+  }, [orderId, paymentReturn, qc, setSearchParams]);
+
+  useEffect(() => {
+    if (order.data?.status === 'paid' && paymentReturn) {
+      setMessage((prev) => prev ?? 'Paid — seller can ship. Fulfilment unlocked.');
+      setConfirming(false);
+      setSearchParams({}, { replace: true });
+    }
+  }, [order.data?.status, paymentReturn, setSearchParams]);
 
   const requestRefund = useMutation({
     mutationFn: () => {
@@ -133,6 +212,7 @@ export function OrderDetailPage() {
       <div className={styles.panel}>
         <span className={styles.badge}>{o.status}</span>
         <h1>Order {o.id}</h1>
+        {confirming && <p className={styles.muted}>Confirming payment with the provider…</p>}
         <p>
           Total: {formatZarFromCents(o.totalCents)} (incl. delivery{' '}
           {formatZarFromCents(o.deliveryCents)})

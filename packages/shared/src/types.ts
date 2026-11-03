@@ -1,5 +1,5 @@
 import type { PlatformRole, SellerPermission, SellerRole } from './roles.js';
-import type { SaAddress } from './schemas.js';
+import type { SaAddress, SellerDocumentKind } from './schemas.js';
 
 export type ApplicationStatus =
   | 'draft'
@@ -12,15 +12,28 @@ export type ProductStatus = 'draft' | 'pending_review' | 'active' | 'rejected' |
 
 export type SellerStatus = 'active' | 'suspended';
 
+/** Chosen at registration — customers cannot open Seller Centre. */
+export type AccountType = 'customer' | 'seller';
+
 export interface UserProfile {
   uid: string;
   email: string;
   displayName: string;
   phone?: string;
+  /** Set once at registration. Missing = legacy (infer from memberships). */
+  accountType?: AccountType;
   platformRoles: PlatformRole[];
   status: 'active' | 'suspended';
   createdAt?: string;
   updatedAt?: string;
+}
+
+export interface SellerDocumentRef {
+  kind: SellerDocumentKind;
+  path: string;
+  fileName: string;
+  contentType: string;
+  uploadedAt?: string;
 }
 
 export interface SellerApplication {
@@ -34,12 +47,7 @@ export interface SellerApplication {
   contactEmail: string;
   contactPhone: string;
   businessAddress: SaAddress;
-  documentRefs: Array<{
-    path: string;
-    fileName: string;
-    contentType: string;
-    uploadedAt?: string;
-  }>;
+  documentRefs: SellerDocumentRef[];
   verificationChecklist: {
     businessDetailsComplete: boolean;
     documentsUploaded: boolean;
@@ -56,6 +64,14 @@ export interface SellerApplication {
   updatedAt?: string;
 }
 
+/** Bank destination for seller withdrawals (Paystack Transfer / EFT). */
+export interface SellerPayoutBank {
+  accountName: string;
+  bankName: string;
+  accountNumber: string;
+  branchCode?: string;
+}
+
 export interface Seller {
   id: string;
   applicationId: string;
@@ -63,6 +79,8 @@ export interface Seller {
   businessName: string;
   status: SellerStatus;
   commissionPlanId: string;
+  /** Where Nexle sends withdrawals after the 8% platform fee. */
+  payoutBank?: SellerPayoutBank;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -76,6 +94,11 @@ export interface SellerMember {
   status: 'active' | 'revoked';
   createdAt?: string;
   updatedAt?: string;
+}
+
+/** Authenticated session payload from GET /v1/users/me */
+export interface MeResponse extends UserProfile {
+  sellerMemberships: SellerMember[];
 }
 
 export interface Category {
@@ -149,6 +172,7 @@ export interface Actor {
   uid: string;
   email: string;
   displayName: string;
+  accountType?: AccountType;
   platformRoles: PlatformRole[];
   status: 'active' | 'suspended';
   sellerMemberships: SellerMember[];
@@ -313,6 +337,8 @@ export interface Payout {
   requestedByUid: string;
   reviewedByUid?: string;
   decisionReason?: string;
+  /** Bank snapshot at request time — amount is already net of platform commission. */
+  destinationBank?: SellerPayoutBank;
   createdAt?: string;
   updatedAt?: string;
   paidAt?: string;

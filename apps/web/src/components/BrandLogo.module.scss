@@ -19,10 +19,8 @@
 }
 
 .hero {
-  height: clamp(4.5rem, 14vw, 7.5rem);
+  height: clamp(2.8rem, 8vw, 4.25rem);
   width: auto;
-  margin: 0 auto 1.25rem;
-  filter: drop-shadow(0 12px 28px rgba(20, 20, 20, 0.08));
 }
 
 .auth {

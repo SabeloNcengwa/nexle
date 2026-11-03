@@ -30,7 +30,10 @@ export function MockPayPage() {
       }),
     onSuccess: (_data, outcome) => {
       if (outcome === 'succeeded' && orderId) {
-        navigate(`/orders/${orderId}`);
+        // Same return path as live Paystack — OrderDetailPage confirms + unlocks fulfilment
+        navigate(`/orders/${orderId}?payment=return`);
+      } else if (outcome === 'succeeded' && returnUrl) {
+        navigate(returnUrl.startsWith('http') ? new URL(returnUrl).pathname + '?payment=return' : returnUrl);
       } else {
         navigate('/checkout?payment=failed');
       }

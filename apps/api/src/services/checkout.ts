@@ -3,6 +3,8 @@ import {
   canTransitionOrder,
   canTransitionPayment,
   checkoutSchema,
+  confirmPaymentSchema,
+  DEFAULT_PLATFORM_COMMISSION_BPS,
   priceOrderLine,
   resolveUnitPriceCents,
   sumLineSubtotals,
@@ -12,10 +14,12 @@ import {
   type OrderLineSnapshot,
   type PaymentAttempt,
 } from '@mavundla/shared';
+import type { DocData } from '../db/types.js';
 import { db } from '../config/firebase.js';
 import { assertSellerAllowedInPilot } from '../config/pilot.js';
 import { getRuntimeEnv } from '../config/runtime.js';
 import { AppError } from '../lib/errors.js';
+import { assertMoneyAmountsMatch } from '../lib/moneySecurity.js';
 import { requireAuthenticatedUser } from '../permissions/helpers.js';
 import { getPaymentProvider } from '../providers/payment/index.js';
 import { writeAuditLog } from './audit.js';
@@ -40,7 +44,7 @@ async function loadCommissionPlan(planId: string): Promise<CommissionPlan> {
   const data = snap.data()!;
   return {
     id: snap.id,
-    percentageBps: Number(data.percentageBps ?? 1000),
+    percentageBps: Number(data.percentageBps ?? DEFAULT_PLATFORM_COMMISSION_BPS),
     version: Number(data.version ?? 1),
   };
 }
@@ -99,7 +103,7 @@ async function buildPricedLines(items: CartItem[]): Promise<OrderLineSnapshot[]>
   return lines;
 }
 
-function mapOrder(id: string, data: FirebaseFirestore.DocumentData): Order {
+function mapOrder(id: string, data: DocData): Order {
   return {
     id,
     customerUid: String(data.customerUid),
@@ -120,7 +124,7 @@ function mapOrder(id: string, data: FirebaseFirestore.DocumentData): Order {
   };
 }
 
-function mapPayment(id: string, data: FirebaseFirestore.DocumentData): PaymentAttempt {
+function mapPayment(id: string, data: DocData): PaymentAttempt {
   return {
     id,
     orderId: String(data.orderId),
@@ -342,13 +346,19 @@ export async function processVerifiedPaymentOutcome(input: {
   amountCents: number;
   currency: 'ZAR';
   eventId: string;
+  actorUid?: string;
+  source?: 'webhook' | 'return_confirm' | 'mock_complete';
 }): Promise<{ order: Order; payment: PaymentAttempt; duplicate: boolean }> {
-  const eventRef = db().collection('webhookEvents').doc(`mock_${input.eventId}`);
+  const eventRef = db().collection('webhookEvents').doc(`evt_${input.eventId}`);
   const existingEvent = await eventRef.get();
   if (existingEvent.exists) {
     const paymentId = String(existingEvent.data()!.paymentId);
     const paymentSnap = await db().collection('payments').doc(paymentId).get();
     const orderSnap = await db().collection('orders').doc(String(paymentSnap.data()!.orderId)).get();
+    // Idempotent seller ping if first path raced before notify finished
+    if (orderSnap.exists && orderSnap.data()!.status === 'paid') {
+      await notifySellersOrderPaid(orderSnap.id, orderSnap.data()!).catch(() => undefined);
+    }
     return {
       order: mapOrder(orderSnap.id, orderSnap.data()!),
       payment: mapPayment(paymentSnap.id, paymentSnap.data()!),
@@ -367,19 +377,23 @@ export async function processVerifiedPaymentOutcome(input: {
   const paymentDoc = paymentQuery.docs[0]!;
   const paymentData = paymentDoc.data();
 
-  if (Number(paymentData.amountCents) !== input.amountCents || paymentData.currency !== input.currency) {
-    throw new AppError('AMOUNT_MISMATCH', 'Payment amount/currency mismatch', 400);
+  const orderPreview = await db().collection('orders').doc(String(paymentData.orderId)).get();
+  if (!orderPreview.exists) {
+    throw new AppError('NOT_FOUND', 'Order missing for payment', 404);
+  }
+  assertMoneyAmountsMatch({
+    orderTotalCents: Number(orderPreview.data()!.totalCents),
+    paymentAmountCents: Number(paymentData.amountCents),
+    verifiedAmountCents: input.amountCents,
+    currency: input.currency,
+  });
+  if (paymentData.currency !== input.currency) {
+    throw new AppError('AMOUNT_MISMATCH', 'Payment currency mismatch', 400);
   }
 
+  // Do not record pending as a durable event — that would block a later success
+  // with the same return_confirm_* eventId.
   if (input.status === 'pending') {
-    await eventRef.set({
-      provider: 'mock',
-      eventId: input.eventId,
-      paymentId: paymentDoc.id,
-      status: input.status,
-      processedAt: new Date().toISOString(),
-      ignored: true,
-    });
     const orderSnap = await db().collection('orders').doc(String(paymentData.orderId)).get();
     return {
       order: mapOrder(orderSnap.id, orderSnap.data()!),
@@ -422,10 +436,11 @@ export async function processVerifiedPaymentOutcome(input: {
 
     // Writes after all reads
     tx.set(eventRef, {
-      provider: 'mock',
+      provider: payment.provider ?? 'unknown',
       eventId: input.eventId,
       paymentId: paymentDoc.id,
       status: input.status,
+      source: input.source ?? 'webhook',
       processedAt: nowIso,
     });
 
@@ -501,10 +516,14 @@ export async function processVerifiedPaymentOutcome(input: {
       platformRoles: [],
       status: 'active',
       sellerMemberships: [],
+      accountType: undefined,
     });
 
     const paidOrder = await orderRef.get();
     if (paidOrder.exists && paidOrder.data()!.status === 'paid') {
+      // Notify sellers first so packing starts immediately (ledger must not delay fulfilment).
+      await notifySellersOrderPaid(orderRef.id, paidOrder.data()!).catch(() => undefined);
+
       await postSaleLedgerForOrder({
         orderId: orderRef.id,
         paymentId: paymentDoc.id,
@@ -521,6 +540,20 @@ export async function processVerifiedPaymentOutcome(input: {
         },
         dedupeKey: `order_paid_${orderRef.id}`,
       }).catch(() => undefined);
+
+      await writeAuditLog({
+        actorUid: input.actorUid ?? customerUid,
+        action: 'payment.succeeded',
+        resourceType: 'payments',
+        resourceId: paymentDoc.id,
+        metadata: {
+          orderId: orderRef.id,
+          amountCents: input.amountCents,
+          currency: input.currency,
+          source: input.source ?? 'webhook',
+          eventId: input.eventId,
+        },
+      }).catch(() => undefined);
     }
   }
 
@@ -531,6 +564,126 @@ export async function processVerifiedPaymentOutcome(input: {
     payment: mapPayment(paymentSnap.id, paymentSnap.data()!),
     duplicate: false,
   };
+}
+
+/** Alert each seller owner as soon as their sellerOrder is confirmed — fulfilment unlocked. */
+async function notifySellersOrderPaid(
+  orderId: string,
+  orderData: DocData,
+): Promise<void> {
+  const sellerOrderIds = (orderData.sellerOrderIds as string[]) ?? [];
+  const sellerIds = new Set<string>();
+  for (const soId of sellerOrderIds) {
+    const so = await db().collection('sellerOrders').doc(soId).get();
+    if (so.exists) sellerIds.add(String(so.data()!.sellerId));
+  }
+  // Fallback: lines if sellerOrderIds missing on older orders
+  if (sellerIds.size === 0) {
+    for (const line of (orderData.lines as Array<{ sellerId: string }>) ?? []) {
+      sellerIds.add(line.sellerId);
+    }
+  }
+
+  await Promise.all(
+    [...sellerIds].map(async (sellerId) => {
+      const sellerSnap = await db().collection('sellers').doc(sellerId).get();
+      if (!sellerSnap.exists) return;
+      const ownerUid = String(sellerSnap.data()!.ownerUid ?? '');
+      if (!ownerUid) return;
+      await enqueueNotification({
+        template: 'seller_new_order',
+        toUid: ownerUid,
+        vars: {
+          orderId,
+          sellerId,
+          summary: `Order ${orderId} paid — fulfil and ship now`,
+        },
+        dedupeKey: `seller_new_order_${orderId}_${sellerId}`,
+      });
+    }),
+  );
+}
+
+/**
+ * Fast path: customer return URL verifies with the provider and confirms payment.
+ * Races the webhook — whichever arrives first wins (idempotent).
+ * Only the paying customer may confirm (staff cannot force-capture via this endpoint).
+ */
+export async function confirmPaymentForOrder(
+  actor: Actor | undefined,
+  body: unknown,
+  webBaseUrl: string,
+): Promise<{ order: Order; payment: PaymentAttempt; duplicate: boolean; pending: boolean }> {
+  requireAuthenticatedUser(actor);
+  const { orderId } = confirmPaymentSchema.parse(body);
+
+  const orderSnap = await db().collection('orders').doc(orderId).get();
+  if (!orderSnap.exists) throw new AppError('NOT_FOUND', 'Order not found', 404);
+  const orderData = orderSnap.data()!;
+
+  if (orderData.customerUid !== actor.uid) {
+    throw new AppError('FORBIDDEN', 'Not your order', 403);
+  }
+
+  const paymentId = String(orderData.paymentId ?? '');
+  if (!paymentId) throw new AppError('PAYMENT_NOT_FOUND', 'Order has no payment', 404);
+  const paymentSnap = await db().collection('payments').doc(paymentId).get();
+  if (!paymentSnap.exists) throw new AppError('PAYMENT_NOT_FOUND', 'Payment not found', 404);
+  const paymentData = paymentSnap.data()!;
+
+  assertMoneyAmountsMatch({
+    orderTotalCents: Number(orderData.totalCents),
+    paymentAmountCents: Number(paymentData.amountCents),
+    verifiedAmountCents: Number(paymentData.amountCents),
+    currency: String(paymentData.currency ?? 'ZAR'),
+  });
+
+  // Already settled — fulfilment unlocked; nothing to wait for.
+  if (orderData.status === 'paid' && paymentData.status === 'succeeded') {
+    return {
+      order: mapOrder(orderId, orderData),
+      payment: mapPayment(paymentId, paymentData),
+      duplicate: true,
+      pending: false,
+    };
+  }
+
+  const providerRef = String(paymentData.providerRef ?? '');
+  if (!providerRef) {
+    throw new AppError('PROVIDER_REF_MISSING', 'Payment has no provider reference yet', 400);
+  }
+
+  const provider = getPaymentProvider(webBaseUrl);
+  const verified = await provider.verifyTransaction(providerRef);
+
+  if (verified.status === 'pending') {
+    return {
+      order: mapOrder(orderId, orderData),
+      payment: mapPayment(paymentId, paymentData),
+      duplicate: false,
+      pending: true,
+    };
+  }
+
+  assertMoneyAmountsMatch({
+    orderTotalCents: Number(orderData.totalCents),
+    paymentAmountCents: Number(paymentData.amountCents),
+    verifiedAmountCents: verified.amountCents,
+    currency: verified.currency,
+  });
+
+  const result = await processVerifiedPaymentOutcome({
+    providerRef: verified.providerRef,
+    status: verified.status,
+    amountCents: verified.amountCents,
+    currency: verified.currency,
+    // Stable id so return-URL retries + webhook do not double-apply
+    eventId: `return_confirm_${paymentId}`,
+    actorUid: actor.uid,
+    source: 'return_confirm',
+  });
+
+  return { ...result, pending: false };
 }
 
 export async function expireReservations(limit = 50): Promise<{ expired: number }> {
@@ -552,7 +705,7 @@ export async function expireReservations(limit = 50): Promise<{ expired: number 
       const invSnap = await tx.get(invRef);
       const orderRef = db().collection('orders').doc(String(data.orderId));
       const orderSnap = await tx.get(orderRef);
-      let paySnap: FirebaseFirestore.DocumentSnapshot | null = null;
+      let paySnap: import("../db/store.js").DocumentSnapshot | null = null;
       if (orderSnap.exists && orderSnap.data()!.paymentId) {
         paySnap = await tx.get(db().collection('payments').doc(String(orderSnap.data()!.paymentId)));
       }

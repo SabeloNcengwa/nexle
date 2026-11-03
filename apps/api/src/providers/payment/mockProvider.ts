@@ -1,5 +1,6 @@
 import { createHmac, randomUUID } from 'node:crypto';
 import { AppError } from '../../lib/errors.js';
+import { safeEqualString } from '../../lib/moneySecurity.js';
 import type {
   CreateRefundInput,
   CreateRefundResult,
@@ -112,7 +113,7 @@ export class MockPaymentProvider implements PaymentProvider {
       .update(JSON.stringify(body))
       .digest('hex');
 
-    if (!signature || signature !== expected) {
+    if (!signature || !safeEqualString(signature, expected)) {
       throw new AppError('INVALID_WEBHOOK_SIGNATURE', 'Mock webhook signature invalid', 401);
     }
 

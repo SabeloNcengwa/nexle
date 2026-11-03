@@ -7,6 +7,7 @@ import {
   type ProductReview,
   type ProductRatingSummary,
 } from '@mavundla/shared';
+import type { DocData } from '../db/types.js';
 import { db } from '../config/firebase.js';
 import { AppError } from '../lib/errors.js';
 import {
@@ -16,7 +17,7 @@ import {
 } from '../permissions/helpers.js';
 import { writeAuditLog } from './audit.js';
 
-function mapReview(id: string, data: FirebaseFirestore.DocumentData): ProductReview {
+function mapReview(id: string, data: DocData): ProductReview {
   return {
     id,
     productId: String(data.productId),
@@ -121,7 +122,7 @@ export async function listProductReviews(query: unknown): Promise<{
   summary: ProductRatingSummary;
 }> {
   const input = listProductReviewsQuerySchema.parse(query);
-  let q: FirebaseFirestore.Query = db()
+  let q: import("../db/store.js").Query = db()
     .collection('reviews')
     .where('productId', '==', input.productId)
     .where('status', '==', 'published')

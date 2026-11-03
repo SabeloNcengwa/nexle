@@ -19,6 +19,7 @@ describe('fulfilment helpers', () => {
 
   it('renders notification subjects with variables', () => {
     expect(renderNotificationSubject('order_confirmation', { orderId: 'abc' })).toContain('abc');
+    expect(renderNotificationSubject('seller_new_order', { orderId: 'abc' })).toContain('ship');
     expect(renderNotificationSubject('shipment_update', { trackingNumber: 'TRK1' })).toContain(
       'TRK1',
     );

@@ -9,6 +9,7 @@ import {
   type Shipment,
   type ShipmentStatus,
 } from '@mavundla/shared';
+import type { DocData } from '../db/types.js';
 import { db } from '../config/firebase.js';
 import { AppError } from '../lib/errors.js';
 import {
@@ -22,7 +23,7 @@ import { writeAuditLog } from './audit.js';
 import { attachIdempotencyResource, claimIdempotencyKey } from './idempotency.js';
 import { enqueueNotification } from './notifications.js';
 
-function mapShipment(id: string, data: FirebaseFirestore.DocumentData): Shipment {
+function mapShipment(id: string, data: DocData): Shipment {
   return {
     id,
     orderId: String(data.orderId),

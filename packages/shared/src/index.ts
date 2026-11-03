@@ -7,3 +7,4 @@ export * from './pricing.js';
 export * from './finance.js';
 export * from './fulfilment.js';
 export * from './reviews.js';
+export * from './merchantContract.js';

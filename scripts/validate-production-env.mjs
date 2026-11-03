@@ -31,6 +31,16 @@ if (!env.JOBS_SECRET || env.JOBS_SECRET.length < 16) {
   problems.push('JOBS_SECRET must be set and at least 16 characters');
 }
 
+if (!env.SUPABASE_DB_URL) {
+  problems.push('SUPABASE_DB_URL is required in production');
+}
+if (!env.SUPABASE_SERVICE_ROLE_KEY) {
+  problems.push('SUPABASE_SERVICE_ROLE_KEY is required in production');
+}
+if (!env.SUPABASE_URL || !String(env.SUPABASE_URL).startsWith('https://')) {
+  problems.push('SUPABASE_URL must be https in production');
+}
+
 const origins = String(env.CORS_ORIGIN ?? '')
   .split(',')
   .map((s) => s.trim());

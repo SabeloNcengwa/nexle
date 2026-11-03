@@ -8,6 +8,7 @@ import {
   type Refund,
   type RefundLine,
 } from '@mavundla/shared';
+import type { DocData } from '../db/types.js';
 import { db } from '../config/firebase.js';
 import { AppError } from '../lib/errors.js';
 import {
@@ -29,7 +30,7 @@ async function getReturnWindowDays(): Promise<number> {
   return Number(snap.data()!.returnWindowDays ?? DEFAULT_RETURN_WINDOW_DAYS);
 }
 
-function mapRefund(id: string, data: FirebaseFirestore.DocumentData): Refund {
+function mapRefund(id: string, data: DocData): Refund {
   return {
     id,
     orderId: String(data.orderId),

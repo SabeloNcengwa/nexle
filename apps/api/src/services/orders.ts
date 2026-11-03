@@ -1,5 +1,6 @@
 import type { Actor, Order, SellerOrder } from '@mavundla/shared';
 import { db } from '../config/firebase.js';
+import type { DocData } from '../db/types.js';
 import { AppError } from '../lib/errors.js';
 import {
   assertOrderAccess,
@@ -8,7 +9,7 @@ import {
   requireAuthenticatedUser,
 } from '../permissions/helpers.js';
 
-function mapOrder(id: string, data: FirebaseFirestore.DocumentData): Order {
+function mapOrder(id: string, data: DocData): Order {
   return {
     id,
     customerUid: String(data.customerUid),
@@ -29,7 +30,7 @@ function mapOrder(id: string, data: FirebaseFirestore.DocumentData): Order {
   };
 }
 
-function mapSellerOrder(id: string, data: FirebaseFirestore.DocumentData): SellerOrder {
+function mapSellerOrder(id: string, data: DocData): SellerOrder {
   return {
     id,
     orderId: String(data.orderId),

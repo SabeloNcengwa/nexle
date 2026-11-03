@@ -5,12 +5,13 @@ import {
   type Cart,
   type CartItem,
 } from '@mavundla/shared';
+import type { DocData } from '../db/types.js';
 import { db } from '../config/firebase.js';
 import { AppError } from '../lib/errors.js';
 
 const MAX_CART_ITEMS = 50;
 
-function mapCart(id: string, data: FirebaseFirestore.DocumentData): Cart {
+function mapCart(id: string, data: DocData): Cart {
   return {
     id,
     ownerUid: data.ownerUid,

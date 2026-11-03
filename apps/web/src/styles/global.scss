@@ -1,19 +1,25 @@
 :root {
-  --color-ink: #1a1a1a;
-  --color-ink-muted: #4a4a4a;
-  --color-surface: #f7f6f4;
+  --color-ink: #16181d;
+  --color-ink-muted: #5e6570;
+  --color-surface: #f4f1ec;
   --color-surface-elevated: #ffffff;
+  --color-header: #12151a;
+  --color-header-text: #f7f4ef;
   --color-brand: #e85d24;
-  --color-brand-deep: #1a1a1a;
-  --color-accent: #c43a1a;
-  --color-line: #e4e2de;
-  --color-danger: #a12828;
-  --color-ok: #1b7a45;
-  --font-display: 'DM Sans', 'Segoe UI', sans-serif;
-  --font-body: 'DM Sans', 'Segoe UI', sans-serif;
-  --shadow-soft: 0 18px 40px rgba(26, 26, 26, 0.08);
+  --color-brand-deep: #c44714;
+  --color-accent: #ff8a4c;
+  --color-deal: #d92d20;
+  --color-line: #e7e1d8;
+  --color-danger: #b42318;
+  --color-ok: #0f7a4a;
+  --font-display: 'Outfit', 'Figtree', 'Segoe UI', sans-serif;
+  --font-body: 'Figtree', 'DM Sans', 'Segoe UI', sans-serif;
+  --shadow-soft: 0 1px 2px rgba(22, 24, 29, 0.04), 0 10px 28px rgba(22, 24, 29, 0.06);
+  --shadow-lift: 0 16px 40px rgba(22, 24, 29, 0.12);
   --radius: 12px;
-  --max: 1120px;
+  --radius-lg: 20px;
+  --max: 1180px;
+  --header-search-h: 3rem;
 }
 
 *,
@@ -33,24 +39,26 @@ body {
   font-family: var(--font-body);
   color: var(--color-ink);
   background:
-    radial-gradient(1100px 480px at 8% -8%, rgba(232, 93, 36, 0.14), transparent 58%),
-    radial-gradient(900px 420px at 100% 0%, rgba(196, 58, 26, 0.08), transparent 55%),
+    radial-gradient(900px 420px at 100% -10%, rgba(232, 93, 36, 0.12), transparent 55%),
+    radial-gradient(700px 380px at -10% 20%, rgba(22, 24, 29, 0.04), transparent 50%),
     var(--color-surface);
   line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }
 
 a {
-  color: var(--color-brand-deep);
-  text-decoration-thickness: 1px;
-  text-underline-offset: 3px;
+  color: inherit;
+  text-decoration: none;
 }
 
 h1,
 h2,
 h3 {
   font-family: var(--font-display);
-  line-height: 1.15;
+  line-height: 1.12;
+  letter-spacing: -0.03em;
   margin: 0 0 0.5rem;
+  color: var(--color-ink);
 }
 
 p {
@@ -67,6 +75,11 @@ textarea {
 
 button {
   cursor: pointer;
+}
+
+img {
+  max-width: 100%;
+  display: block;
 }
 
 .sr-only {

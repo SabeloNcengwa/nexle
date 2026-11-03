@@ -5,10 +5,11 @@ import {
   type OrderLineSnapshot,
   type SellerBucketBalances,
 } from '@mavundla/shared';
+import type { DocData } from '../db/types.js';
 import { db } from '../config/firebase.js';
 import { AppError } from '../lib/errors.js';
 
-function mapEntry(id: string, data: FirebaseFirestore.DocumentData): LedgerEntry {
+function mapEntry(id: string, data: DocData): LedgerEntry {
   return {
     id,
     sellerId: String(data.sellerId),

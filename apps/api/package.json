@@ -11,16 +11,22 @@
     "lint": "eslint src --ext .ts",
     "test": "vitest run --config vitest.config.ts",
     "test:rules": "vitest run --config vitest.rules.config.ts",
-    "bootstrap:admin": "tsx src/scripts/bootstrapAdmin.ts"
+    "bootstrap:admin": "tsx src/scripts/bootstrapAdmin.ts",
+    "create:admin": "tsx src/scripts/createStaffAdmin.ts",
+    "ensure:commission": "tsx src/scripts/ensurePlatformCommission.ts",
+    "purge:demo": "tsx src/scripts/purgeDemoData.ts"
   },
   "dependencies": {
     "@mavundla/shared": "0.1.0",
+    "@supabase/supabase-js": "^2.118.0",
     "cors": "^2.8.5",
     "dotenv": "^18.0.8",
     "express": "^4.21.2",
     "firebase-admin": "^13.1.0",
+    "firebase-functions": "^6.3.0",
     "helmet": "^8.0.0",
     "morgan": "^1.10.0",
+    "postgres": "^4.0.0",
     "zod": "^3.24.2"
   },
   "devDependencies": {

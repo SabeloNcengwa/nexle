@@ -2,10 +2,10 @@
 
 ## Principles
 
-- Deny by default (Firestore rules, Storage rules, API authorization).
+- Deny by default (API authorization; Supabase RLS on with service-role/DB URL server access only).
 - Authentication is not authorization.
 - Never trust client-supplied UID, role, seller ID, amount or status.
-- Firebase Admin SDK bypasses Security Rules — every API route must authorize.
+- Firebase Admin verifies ID tokens; Postgres and Storage are accessed via the API (signed upload URLs).
 - Secrets stay server-side / managed secret store; never commit `.env` or service-account JSON.
 
 Phase 5 internal review: `docs/security-review-phase5.md`. Production startup guards refuse unsafe mock/CORS/`JOBS_SECRET` configs; pilot mode restricts sell/buy to `PILOT_SELLER_ALLOWLIST`.
@@ -49,7 +49,11 @@ Public administrator registration is **disabled**.
 
 For production, prefer stronger auth (MFA / IdP) for `super_admin`, `finance_operator` and similar — document in ops runbooks before pilot.
 
-## Firestore rules (summary)
+## Firestore rules (legacy — app data is on Supabase)
+
+Kept in-repo for historical/rules tests. Runtime catalogue/orders/finance data is Postgres.
+
+## Firestore rules (summary, unused at runtime)
 
 - Default: `allow read, write: if false;`
 - `users`: owner read; owner update of non-role fields only; no client role writes
@@ -62,7 +66,12 @@ For production, prefer stronger auth (MFA / IdP) for `super_admin`, `finance_ope
 
 Full rules: `firebase/firestore.rules`. Tested with Emulator Suite.
 
-## Storage rules (summary)
+## Storage (Supabase)
+
+- `seller-docs` — private; staff download via API signed URLs; sellers upload via `POST /v1/uploads/sign`
+- `product-images` — public read; sellers upload via signed URLs
+
+## Legacy Firebase Storage rules (summary)
 
 - Default deny
 - Product images: authenticated seller member upload under `sellers/{sellerId}/products/{productId}/…` with MIME/size checks
@@ -77,6 +86,17 @@ Full rules: `firebase/firestore.rules`. Tested with Emulator Suite.
 - Safe error responses (no stack traces in production)
 - Zod validation on all mutating routes
 - Rate limiting middleware (basic in-memory for Phase 1; replace with managed limiter in production)
+
+## Network security (money traffic)
+
+- **HTTPS only in production** — `REQUIRE_HTTPS` (default on) rejects cleartext via `x-forwarded-proto` (Cloud Functions / Hosting terminate TLS)
+- **HSTS** on API (`helmet`) and Firebase Hosting (`Strict-Transport-Security`, preload)
+- **CORS** — exact origin allowlist; credentials; limited methods/headers; no `*`
+- **Host allowlist** — optional `ALLOWED_HOSTS` to block Host-header abuse
+- **Webhook IP allowlist** — optional `WEBHOOK_IP_ALLOWLIST` for payment/courier webhooks (in addition to HMAC)
+- **Jobs network gate** — `JOBS_SECRET` (timing-safe) + optional `JOBS_IP_ALLOWLIST`
+- **Hosting headers** — CSP, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, COOP/CORP, Permissions-Policy
+- Production guards require `https://` for `WEB_BASE_URL`, `ADMIN_BASE_URL`, and non-localhost CORS when `PUBLIC_LAUNCH=true`
 
 ## Phase 2–3 commerce / finance controls
 

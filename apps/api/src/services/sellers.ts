@@ -1,22 +1,37 @@
 import {
   DEFAULT_PERMISSIONS_BY_ROLE,
+  DEFAULT_PLATFORM_COMMISSION_BPS,
+  MERCHANT_CONTRACT_VERSION,
+  REQUIRED_SELLER_DOCUMENT_KINDS,
   reviewSellerApplicationSchema,
   submitSellerApplicationSchema,
+  updateSellerPayoutBankSchema,
   upsertSellerApplicationSchema,
   type Seller,
   type SellerApplication,
+  type SellerDocumentRef,
 } from '@mavundla/shared';
+import type { DocData } from '../db/types.js';
 import type { Actor } from '@mavundla/shared';
-import { FieldValue } from 'firebase-admin/firestore';
 import { db } from '../config/firebase.js';
+import { FieldValue } from '../db/fieldValue.js';
 import { AppError } from '../lib/errors.js';
+import { createSignedReadUrl } from './uploads.js';
 import {
+  assertSellerAccount,
+  assertSellerPermission,
   requireAuthenticatedUser,
   requirePlatformPermission,
 } from '../permissions/helpers.js';
+import { maskAccountNumber, redactBankForAudit } from '../lib/moneySecurity.js';
 import { writeAuditLog } from './audit.js';
 
-function mapApplication(id: string, data: FirebaseFirestore.DocumentData): SellerApplication {
+function hasRequiredDocuments(refs: SellerDocumentRef[] | undefined): boolean {
+  const kinds = new Set((refs ?? []).map((r) => r.kind));
+  return REQUIRED_SELLER_DOCUMENT_KINDS.every((k) => kinds.has(k));
+}
+
+function mapApplication(id: string, data: DocData): SellerApplication {
   return {
     id,
     ownerUid: String(data.ownerUid),
@@ -51,13 +66,13 @@ export async function createOrUpdateDraftApplication(
   body: unknown,
   applicationId?: string,
 ): Promise<SellerApplication> {
-  requireAuthenticatedUser(actor);
+  assertSellerAccount(actor);
   const input = upsertSellerApplicationSchema.parse(body);
   const now = new Date().toISOString();
 
   const checklist = {
     businessDetailsComplete: Boolean(input.businessName && input.contactEmail && input.businessAddress),
-    documentsUploaded: input.documentRefs.length > 0,
+    documentsUploaded: hasRequiredDocuments(input.documentRefs as SellerDocumentRef[]),
     agreementAccepted: Boolean(input.sellerAgreementVersion),
   };
 
@@ -103,7 +118,7 @@ export async function submitApplication(
   actor: Actor | undefined,
   body: unknown,
 ): Promise<SellerApplication> {
-  requireAuthenticatedUser(actor);
+  assertSellerAccount(actor);
   const { applicationId } = submitSellerApplicationSchema.parse(body);
   const ref = db().collection('sellerApplications').doc(applicationId);
   const snap = await ref.get();
@@ -115,9 +130,25 @@ export async function submitApplication(
   if (!['draft', 'rejected'].includes(data.status)) {
     throw new AppError('INVALID_STATE', 'Only draft or rejected applications can be submitted', 409);
   }
-  const checklist = data.verificationChecklist ?? {};
+  const docs = (data.documentRefs ?? []) as SellerDocumentRef[];
+  const checklist = {
+    businessDetailsComplete: Boolean(data.businessName && data.contactEmail && data.businessAddress),
+    documentsUploaded: hasRequiredDocuments(docs),
+    agreementAccepted: data.sellerAgreementVersion === MERCHANT_CONTRACT_VERSION,
+  };
   if (!checklist.businessDetailsComplete || !checklist.agreementAccepted) {
-    throw new AppError('INCOMPLETE', 'Complete business details and agreement before submitting', 400);
+    throw new AppError(
+      'INCOMPLETE',
+      `Accept and upload the signed Nexle Merchant Agreement version ${MERCHANT_CONTRACT_VERSION} before submitting`,
+      400,
+    );
+  }
+  if (!checklist.documentsUploaded) {
+    throw new AppError(
+      'INCOMPLETE',
+      `Upload required company documents before submitting: ${REQUIRED_SELLER_DOCUMENT_KINDS.join(', ')}`,
+      400,
+    );
   }
 
   const now = new Date().toISOString();
@@ -125,6 +156,7 @@ export async function submitApplication(
     status: 'submitted',
     submittedAt: now,
     updatedAt: now,
+    verificationChecklist: checklist,
   });
   await writeAuditLog({
     actorUid: actor.uid,
@@ -152,7 +184,7 @@ export async function listApplicationsForReview(
   status?: string,
 ): Promise<SellerApplication[]> {
   requirePlatformPermission(actor, ['super_admin', 'support_agent', 'catalogue_moderator']);
-  let query: FirebaseFirestore.Query = db().collection('sellerApplications');
+  let query: import("../db/store.js").Query = db().collection('sellerApplications');
   if (status) {
     query = query.where('status', '==', status);
   } else {
@@ -287,14 +319,29 @@ export async function setSellerStatus(
     resourceId: sellerId,
   });
   const updated = await ref.get();
-  const data = updated.data()!;
+  return mapSeller(sellerId, updated.data()!);
+}
+
+function mapSeller(id: string, data: DocData): Seller {
+  const bank = data.payoutBank as
+    | { accountName: string; bankName: string; accountNumber: string; branchCode?: string }
+    | undefined;
   return {
-    id: sellerId,
+    id,
     applicationId: data.applicationId,
     ownerUid: data.ownerUid,
     businessName: data.businessName,
     status: data.status,
     commissionPlanId: data.commissionPlanId,
+    // Never return full account digits over the API
+    payoutBank: bank
+      ? {
+          accountName: bank.accountName,
+          bankName: bank.bankName,
+          accountNumber: maskAccountNumber(bank.accountNumber),
+          branchCode: bank.branchCode,
+        }
+      : undefined,
     createdAt: data.createdAt,
     updatedAt: data.updatedAt,
   };
@@ -303,19 +350,99 @@ export async function setSellerStatus(
 export async function getSeller(sellerId: string): Promise<Seller> {
   const snap = await db().collection('sellers').doc(sellerId).get();
   if (!snap.exists) throw new AppError('NOT_FOUND', 'Seller not found', 404);
-  const data = snap.data()!;
-  return {
-    id: sellerId,
-    applicationId: data.applicationId,
-    ownerUid: data.ownerUid,
-    businessName: data.businessName,
-    status: data.status,
-    commissionPlanId: data.commissionPlanId,
-    createdAt: data.createdAt,
-    updatedAt: data.updatedAt,
-  };
+  return mapSeller(sellerId, snap.data()!);
 }
 
+/** Members / finance staff — includes payout bank for withdrawals. */
+export async function getSellerForMember(
+  actor: Actor | undefined,
+  sellerId: string,
+): Promise<Seller> {
+  assertSellerPermission(actor, sellerId, 'seller:view_finance');
+  return getSeller(sellerId);
+}
+
+/** Seller saves SA business bank details for withdrawals (platform Paystack → seller bank). */
+export async function updateSellerPayoutBank(
+  actor: Actor | undefined,
+  body: unknown,
+): Promise<Seller> {
+  requireAuthenticatedUser(actor);
+  const input = updateSellerPayoutBankSchema.parse(body);
+  assertSellerPermission(actor, input.sellerId, 'seller:view_finance');
+  const ref = db().collection('sellers').doc(input.sellerId);
+  const snap = await ref.get();
+  if (!snap.exists) throw new AppError('NOT_FOUND', 'Seller not found', 404);
+  const now = new Date().toISOString();
+  await ref.update({
+    payoutBank: input.payoutBank,
+    updatedAt: now,
+  });
+  await writeAuditLog({
+    actorUid: actor.uid,
+    action: 'seller.payout_bank.updated',
+    resourceType: 'sellers',
+    resourceId: input.sellerId,
+    metadata: redactBankForAudit(input.payoutBank),
+  });
+  const updated = await ref.get();
+  return mapSeller(input.sellerId, updated.data()!);
+}
+
+export async function getApplication(
+  actor: Actor | undefined,
+  applicationId: string,
+): Promise<SellerApplication> {
+  requireAuthenticatedUser(actor);
+  const snap = await db().collection('sellerApplications').doc(applicationId).get();
+  if (!snap.exists) throw new AppError('NOT_FOUND', 'Application not found', 404);
+  const data = snap.data()!;
+  const isOwner = data.ownerUid === actor.uid;
+  const isStaff = (actor.platformRoles?.length ?? 0) > 0;
+  if (!isOwner && !isStaff) {
+    throw new AppError('FORBIDDEN', 'Not allowed to view this application', 403);
+  }
+  if (isStaff && !isOwner) {
+    requirePlatformPermission(actor, ['super_admin', 'support_agent', 'catalogue_moderator']);
+  }
+  return mapApplication(applicationId, data);
+}
+
+export interface ApplicationDocumentLink {
+  kind: string;
+  fileName: string;
+  contentType: string;
+  path: string;
+  url: string;
+  expiresAt: string;
+}
+
+/** Staff-only signed download URLs for KYC documents (Admin SDK bypasses Storage rules). */
+export async function getApplicationDocumentLinks(
+  actor: Actor | undefined,
+  applicationId: string,
+): Promise<ApplicationDocumentLink[]> {
+  requirePlatformPermission(actor, ['super_admin', 'support_agent', 'catalogue_moderator']);
+  const snap = await db().collection('sellerApplications').doc(applicationId).get();
+  if (!snap.exists) throw new AppError('NOT_FOUND', 'Application not found', 404);
+  const refs = (snap.data()!.documentRefs ?? []) as SellerDocumentRef[];
+
+  const links: ApplicationDocumentLink[] = [];
+  for (const doc of refs) {
+    const signed = await createSignedReadUrl(doc.path, 15 * 60);
+    links.push({
+      kind: doc.kind,
+      fileName: doc.fileName,
+      contentType: doc.contentType,
+      path: doc.path,
+      url: signed.url,
+      expiresAt: signed.expiresAt,
+    });
+  }
+  return links;
+}
+
+/** Bolt-style default: 8% platform fee on merchandise; seller withdraws the rest. */
 async function ensureDefaultCommissionPlan(): Promise<string> {
   const existing = await db()
     .collection('commissionPlans')
@@ -323,15 +450,28 @@ async function ensureDefaultCommissionPlan(): Promise<string> {
     .limit(1)
     .get();
   if (!existing.empty) {
-    return existing.docs[0]!.id;
+    const doc = existing.docs[0]!;
+    const bps = Number(doc.data().percentageBps);
+    if (bps === DEFAULT_PLATFORM_COMMISSION_BPS) {
+      return doc.id;
+    }
   }
+
+  const defaults = await db().collection('commissionPlans').where('isDefault', '==', true).get();
+  const batch = db().batch();
+  for (const d of defaults.docs) {
+    batch.update(d.ref, { isDefault: false });
+  }
+
   const ref = db().collection('commissionPlans').doc();
-  await ref.set({
-    name: 'Standard 10%',
+  batch.set(ref, {
+    name: 'Standard 8% (platform fee)',
     version: 1,
-    percentageBps: 1000,
+    percentageBps: DEFAULT_PLATFORM_COMMISSION_BPS,
     effectiveFrom: new Date().toISOString(),
     isDefault: true,
+    previousPlanId: existing.empty ? undefined : existing.docs[0]!.id,
   });
+  await batch.commit();
   return ref.id;
 }

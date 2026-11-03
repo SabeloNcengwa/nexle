@@ -1,5 +1,6 @@
+import type { AccountType } from '@mavundla/shared';
 import { useState, type FormEvent } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
 import { BrandLogo } from '../components/BrandLogo';
 import styles from '../components/ui.module.scss';
@@ -7,9 +8,15 @@ import styles from '../components/ui.module.scss';
 export function RegisterPage() {
   const { register } = useAuth();
   const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const preferSeller = params.get('as') === 'seller';
+
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [accountType, setAccountType] = useState<AccountType>(
+    preferSeller ? 'seller' : 'customer',
+  );
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -18,8 +25,8 @@ export function RegisterPage() {
     setBusy(true);
     setError(null);
     try {
-      await register(email, password, displayName);
-      navigate('/account');
+      await register(email, password, displayName, accountType);
+      navigate(accountType === 'seller' ? '/seller' : '/account');
     } catch {
       setError('Registration failed. Try a different email.');
     } finally {
@@ -28,11 +35,57 @@ export function RegisterPage() {
   };
 
   return (
-    <div className={styles.panel} style={{ maxWidth: 420, margin: '0 auto' }}>
+    <div className={styles.panel} style={{ maxWidth: 440, margin: '0 auto' }}>
       <BrandLogo variant="auth" />
-      <h1>Create customer account</h1>
-      <p className={styles.muted}>Administrator accounts cannot be self-registered.</p>
+      <h1>Create your account</h1>
+      <p className={styles.muted}>Choose how you will use Nexle. This cannot be changed later.</p>
       <form className={styles.stack} onSubmit={(e) => void onSubmit(e)}>
+        <fieldset className={styles.stack} style={{ border: 0, margin: 0, padding: 0 }}>
+          <legend className={styles.muted} style={{ marginBottom: '0.35rem' }}>
+            Account type
+          </legend>
+          <div className={styles.accountTypeGrid} role="radiogroup" aria-label="Account type">
+            <label
+              className={`${styles.accountTypeOption}${
+                accountType === 'customer' ? ` ${styles.accountTypeOptionActive}` : ''
+              }`}
+            >
+              <input
+                type="radio"
+                name="accountType"
+                value="customer"
+                checked={accountType === 'customer'}
+                onChange={() => setAccountType('customer')}
+              />
+              <span>
+                <span className={styles.accountTypeOptionStrong}>Customer</span>
+                <span className={styles.muted}>
+                  Shop products, checkout, and track orders. No Seller Centre access.
+                </span>
+              </span>
+            </label>
+            <label
+              className={`${styles.accountTypeOption}${
+                accountType === 'seller' ? ` ${styles.accountTypeOptionActive}` : ''
+              }`}
+            >
+              <input
+                type="radio"
+                name="accountType"
+                value="seller"
+                checked={accountType === 'seller'}
+                onChange={() => setAccountType('seller')}
+              />
+              <span>
+                <span className={styles.accountTypeOptionStrong}>Seller</span>
+                <span className={styles.muted}>
+                  Apply to sell, manage catalogue and orders, and withdraw payouts.
+                </span>
+              </span>
+            </label>
+          </div>
+        </fieldset>
+
         <label className={styles.field}>
           Display name
           <input required value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
@@ -53,7 +106,11 @@ export function RegisterPage() {
         </label>
         {error && <p className={styles.error}>{error}</p>}
         <button className={styles.btn} type="submit" disabled={busy}>
-          {busy ? 'Creating…' : 'Register'}
+          {busy
+            ? 'Creating…'
+            : accountType === 'seller'
+              ? 'Create seller account'
+              : 'Create customer account'}
         </button>
       </form>
       <p className={styles.muted}>

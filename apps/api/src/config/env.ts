@@ -21,12 +21,30 @@ const smsProviders = z.enum(['mock', 'unconfigured', 'twilio', 'clickatell']);
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(8080),
-  CORS_ORIGIN: z.string().default('http://localhost:5173'),
+  CORS_ORIGIN: z.string().default('http://localhost:5173,http://localhost:5174'),
   WEB_BASE_URL: z.string().default('http://localhost:5173'),
+  ADMIN_BASE_URL: z.string().default('http://localhost:5174'),
   FIREBASE_PROJECT_ID: z.string().default('demo-mavundla'),
   FIREBASE_STORAGE_BUCKET: z.string().default('demo-mavundla.appspot.com'),
+  /** Supabase project URL, e.g. https://sttgjxiyyyanfvynrqfb.supabase.co */
+  SUPABASE_URL: z.string().default('https://sttgjxiyyyanfvynrqfb.supabase.co'),
+  /** Service role key — server only; never expose to clients. */
+  SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
+  /** Postgres connection string (Settings → Database). Required for API data store. */
+  SUPABASE_DB_URL: z.string().optional(),
   ADMIN_BOOTSTRAP_SECRET: z.string().optional(),
   JOBS_SECRET: z.string().optional(),
+  /** Comma-separated Host header allowlist (empty = disabled). */
+  ALLOWED_HOSTS: z.string().optional(),
+  /** Comma-separated IPs for /v1/jobs/* (empty = secret-only). */
+  JOBS_IP_ALLOWLIST: z.string().optional(),
+  /** Comma-separated IPs for payment/courier webhooks (empty = signature-only). */
+  WEBHOOK_IP_ALLOWLIST: z.string().optional(),
+  /** Reject cleartext in production when true (default). */
+  REQUIRE_HTTPS: z
+    .string()
+    .optional()
+    .transform((v) => v !== 'false'),
   ALLOW_MOCK_PAYMENTS: z.string().optional(),
   PAYMENT_PROVIDER: paymentProviders.default('mock'),
   PAYMENT_PROVIDER_API_KEY: z.string().optional(),
