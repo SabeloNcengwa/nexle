@@ -73,6 +73,7 @@ export function createApp(env: Env) {
         'Authorization',
         'Content-Type',
         'X-Guest-Cart-Id',
+        'X-Account-Type',
         'X-Correlation-Id',
         'X-Jobs-Secret',
         'X-Requested-With',

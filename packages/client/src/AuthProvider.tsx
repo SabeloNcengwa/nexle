@@ -48,6 +48,15 @@ export interface AuthProviderProps {
 
 function mapAuthError(err: unknown): string {
   const code = (err as { code?: string }).code ?? '';
+  if (code === 'auth/email-already-in-use') {
+    return 'This email is already registered. Sign in instead.';
+  }
+  if (code === 'auth/weak-password') {
+    return 'Password is too weak. Use at least 6 characters.';
+  }
+  if (code === 'auth/invalid-email') {
+    return 'Enter a valid email address.';
+  }
   if (code === 'auth/invalid-credential' || code === 'auth/wrong-password' || code === 'auth/user-not-found') {
     return 'Wrong email or password.';
   }
@@ -85,6 +94,23 @@ export function AuthProvider({
     displayName: string;
   } | null>(null);
 
+  /** Wake the API (Render free tier) before Auth+profile writes so signup works in-app. */
+  const ensureApiReady = async (): Promise<void> => {
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 24; attempt++) {
+      try {
+        await apiFetch('/health');
+        return;
+      } catch (err) {
+        lastError = err;
+        await sleep(Math.min(2500, 400 + attempt * 250));
+      }
+    }
+    throw lastError instanceof Error
+      ? lastError
+      : new Error('Service is starting. Wait a moment and try again.');
+  };
+
   const completeProfile = async (
     current: User,
     displayName: string,
@@ -92,7 +118,8 @@ export function AuthProvider({
   ): Promise<MeResponse> => {
     await current.getIdToken(true);
     let lastError: unknown;
-    for (let attempt = 0; attempt < 4; attempt++) {
+    // Enough attempts to cover a cold API start after Auth user is created.
+    for (let attempt = 0; attempt < 20; attempt++) {
       try {
         const me = await apiFetch<MeResponse>('/v1/users/me', {
           method: 'PATCH',
@@ -102,15 +129,14 @@ export function AuthProvider({
         if (me.accountType === accountType) {
           return me;
         }
-        // Profile exists but type missing/wrong — brief wait for concurrent bootstrap, retry.
-        await sleep(120 * (attempt + 1));
+        await sleep(Math.min(3000, 200 * (attempt + 1)));
       } catch (err) {
         lastError = err;
-        await sleep(120 * (attempt + 1));
+        await sleep(Math.min(3000, 200 * (attempt + 1)));
       }
     }
     if (lastError) throw lastError;
-    throw new Error('Could not save account type. Please try again.');
+    throw new Error('Could not finish creating your account. Please try again.');
   };
 
   const loadProfile = async (current: User): Promise<void> => {
@@ -196,6 +222,7 @@ export function AuthProvider({
       async signIn(email, password) {
         setAuthError(null);
         try {
+          await ensureApiReady();
           await signInWithEmailAndPassword(firebase.auth, email, password);
         } catch (err) {
           const message = mapAuthError(err);
@@ -206,13 +233,26 @@ export function AuthProvider({
       async register(email, password, displayName, accountType) {
         setAuthError(null);
         try {
-          const cred = await createUserWithEmailAndPassword(firebase.auth, email, password);
+          // Bring API online first so Firebase Auth is not created without a profile.
+          await ensureApiReady();
+
+          let user: User;
+          try {
+            const cred = await createUserWithEmailAndPassword(firebase.auth, email, password);
+            user = cred.user;
+          } catch (createErr) {
+            // Incomplete prior signup: Auth exists, profile missing — finish with same password.
+            const code = (createErr as { code?: string }).code;
+            if (code !== 'auth/email-already-in-use') throw createErr;
+            const cred = await signInWithEmailAndPassword(firebase.auth, email, password);
+            user = cred.user;
+          }
           pendingAccountTypeRef.current = {
-            uid: cred.user.uid,
+            uid: user.uid,
             accountType,
             displayName,
           };
-          const me = await completeProfile(cred.user, displayName, accountType);
+          const me = await completeProfile(user, displayName, accountType);
           pendingAccountTypeRef.current = null;
           setProfile(me);
           setMemberships(me.sellerMemberships ?? []);

@@ -19,18 +19,23 @@ export function RegisterPage() {
   );
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [busyLabel, setBusyLabel] = useState('Creating…');
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setBusy(true);
+    setBusyLabel('Starting…');
     setError(null);
+    const labelTimer = window.setTimeout(() => setBusyLabel('Creating your account…'), 2500);
     try {
       await register(email, password, displayName, accountType);
       navigate(accountType === 'seller' ? '/seller' : '/account');
-    } catch {
-      setError('Registration failed. Try a different email.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Registration failed. Please try again.');
     } finally {
+      window.clearTimeout(labelTimer);
       setBusy(false);
+      setBusyLabel('Creating…');
     }
   };
 
@@ -107,7 +112,7 @@ export function RegisterPage() {
         {error && <p className={styles.error}>{error}</p>}
         <button className={styles.btn} type="submit" disabled={busy}>
           {busy
-            ? 'Creating…'
+            ? busyLabel
             : accountType === 'seller'
               ? 'Create seller account'
               : 'Create customer account'}
