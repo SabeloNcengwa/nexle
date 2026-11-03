@@ -12,7 +12,8 @@ export function initSupabase(env: Env): SupabaseClient {
   // Storage-only usage; provide `ws` so createClient works on Node 20 (Render free).
   client = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
-    realtime: { transport: ws as unknown as typeof WebSocket },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    realtime: { transport: ws as any },
   });
   return client;
 }
