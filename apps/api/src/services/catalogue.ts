@@ -477,21 +477,19 @@ export async function updateProduct(actor: Actor | undefined, body: unknown): Pr
   const existing = snap.data()!;
   assertSellerPermission(actor, existing.sellerId, 'seller:manage_products');
 
-  const { productId, ...rest } = input;
+  const { productId, initialStock: _ignoreStock, ...rest } = input;
   const now = new Date().toISOString();
-  // Edits take an active listing offline until the seller publishes again (no admin gate).
+  // Keep live listings live when the seller edits details/stock.
   const nextStatus =
-    existing.status === 'active' ||
-    existing.status === 'rejected' ||
-    existing.status === 'pending_review'
+    existing.status === 'rejected' || existing.status === 'pending_review'
       ? 'draft'
       : existing.status;
 
-  await ref.update({
-    ...rest,
-    status: nextStatus,
-    updatedAt: now,
-  });
+  const patch: Record<string, unknown> = { status: nextStatus, updatedAt: now };
+  for (const [key, value] of Object.entries(rest)) {
+    if (value !== undefined) patch[key] = value;
+  }
+  await ref.update(patch);
 
   if (input.variants) {
     for (const variant of input.variants) {
@@ -538,6 +536,24 @@ export async function submitProductForReview(
   );
   if (!hasRealImage) {
     throw new AppError('INCOMPLETE', 'Upload a product photo before publishing', 400);
+  }
+  const variants = (data.variants as Array<{ sku: string }> | undefined) ?? [];
+  let totalAvailable = 0;
+  for (const variant of variants) {
+    const invSnap = await db().collection('inventory').doc(`${productId}_${variant.sku}`).get();
+    if (!invSnap.exists) continue;
+    const inv = invSnap.data()!;
+    totalAvailable += Math.max(
+      0,
+      Number(inv.quantityOnHand ?? 0) - Number(inv.quantityReserved ?? 0),
+    );
+  }
+  if (totalAvailable < 1) {
+    throw new AppError(
+      'INCOMPLETE',
+      'Set stock quantity before publishing — customers cannot buy items with 0 in stock',
+      400,
+    );
   }
   assertSellerAllowedInPilot(getRuntimeEnv(), String(data.sellerId));
 

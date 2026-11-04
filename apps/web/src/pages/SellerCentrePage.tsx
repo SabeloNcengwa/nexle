@@ -6,6 +6,7 @@ import {
   MERCHANT_CONTRACT_VERSION,
   REQUIRED_SELLER_DOCUMENT_KINDS,
   type Category,
+  type InventoryRecord,
   type LedgerEntry,
   type Payout,
   type Product,
@@ -884,6 +885,7 @@ function ProductsPanel() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const qc = useQueryClient();
 
   const categories = useQuery({
@@ -896,6 +898,11 @@ function ProductsPanel() {
     enabled: Boolean(sellerId),
     queryFn: () => apiFetch<Product[]>(`/v1/catalogue/sellers/${sellerId}/products`),
   });
+  const inventory = useQuery({
+    queryKey: ['seller-inventory', sellerId],
+    enabled: Boolean(sellerId),
+    queryFn: () => apiFetch<InventoryRecord[]>(`/v1/catalogue/sellers/${sellerId}/inventory`),
+  });
   const orders = useQuery({
     queryKey: ['seller-orders', sellerId],
     enabled: Boolean(sellerId),
@@ -907,6 +914,38 @@ function ProductsPanel() {
       setCategoryId(categories.data.find((c) => c.id === 'general')?.id ?? categories.data[0]!.id);
     }
   }, [categories.data, categoryId]);
+
+  const stockFor = (productId: string, sku: string) => {
+    const row = inventory.data?.find((i) => i.productId === productId && i.sku === sku);
+    return row ? Math.max(0, row.quantityOnHand - row.quantityReserved) : 0;
+  };
+
+  const beginEdit = (p: Product) => {
+    const variant = p.variants[0];
+    setEditingId(p.id);
+    setShowForm(false);
+    setTitle(p.title);
+    setDescription(p.description);
+    setPriceRands(String(Math.round((variant?.priceCents ?? 0) / 100)));
+    setStockQty(String(stockFor(p.id, variant?.sku ?? '')));
+    setCategoryMode('select');
+    setCategoryId(p.categoryId || 'general');
+    setSuggestedCategory('');
+    setImageFile(null);
+    setError(null);
+    setMessage(null);
+  };
+
+  const resetFormFields = () => {
+    setEditingId(null);
+    setTitle('');
+    setDescription('');
+    setPriceRands('100');
+    setStockQty('10');
+    setSuggestedCategory('');
+    setCategoryMode('select');
+    setImageFile(null);
+  };
 
   const soldIds = useMemo(() => {
     const ids = new Set<string>();
@@ -986,15 +1025,91 @@ function ProductsPanel() {
       );
       setError(null);
       setShowForm(false);
-      setTitle('');
-      setDescription('');
-      setPriceRands('100');
-      setStockQty('10');
-      setSuggestedCategory('');
-      setCategoryMode('select');
-      setImageFile(null);
+      resetFormFields();
       await qc.invalidateQueries({ queryKey: ['seller-products', sellerId] });
+      await qc.invalidateQueries({ queryKey: ['seller-inventory', sellerId] });
       await qc.invalidateQueries({ queryKey: ['store-categories'] });
+    },
+    onError: (err: Error) => setError(err.message),
+  });
+
+  const saveEdit = useMutation({
+    mutationFn: async () => {
+      if (!sellerId || !editingId) throw new Error('Nothing to edit');
+      const existing = products.data?.find((p) => p.id === editingId);
+      if (!existing) throw new Error('Product not found');
+      const variant = existing.variants[0];
+      if (!variant) throw new Error('Product has no sellable option');
+      const rands = Number(priceRands);
+      if (!Number.isFinite(rands) || rands < 1) {
+        throw new Error('Enter a price in rands (e.g. 100 for R100).');
+      }
+      const stock = Math.floor(Number(stockQty));
+      if (!Number.isFinite(stock) || stock < 0) {
+        throw new Error('Enter how many you have in stock.');
+      }
+      const priceCents = Math.round(rands * 100);
+      let resolvedCategoryId = categoryId || existing.categoryId;
+      if (categoryMode === 'suggest') {
+        const name = suggestedCategory.trim();
+        if (name.length < 2) throw new Error('Enter a category name to suggest.');
+        const suggested = await apiFetch<{ category: Category }>(
+          '/v1/catalogue/category-suggestions',
+          {
+            method: 'POST',
+            body: JSON.stringify({ sellerId, name }),
+          },
+        );
+        resolvedCategoryId = suggested.category.id;
+      }
+
+      let images = existing.images;
+      if (imageFile) {
+        const path = `sellers/${sellerId}/products/${editingId}/cover.jpg`;
+        const contentType = (
+          imageFile.type === 'image/png'
+            ? 'image/png'
+            : imageFile.type === 'image/webp'
+              ? 'image/webp'
+              : 'image/jpeg'
+        ) as 'image/jpeg' | 'image/png' | 'image/webp';
+        await uploadViaSignedUrl(path, imageFile, contentType);
+        images = [{ path, contentType, sortOrder: 0 }];
+      }
+
+      await apiFetch<Product>('/v1/catalogue/products', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          productId: editingId,
+          title: title.trim(),
+          description: description.trim(),
+          categoryId: resolvedCategoryId,
+          images,
+          variants: [
+            {
+              ...variant,
+              priceCents,
+              title: variant.title || 'Default',
+              attributes: variant.attributes ?? {},
+            },
+          ],
+        }),
+      });
+
+      await apiFetch('/v1/catalogue/inventory', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          inventoryId: `${editingId}_${variant.sku}`,
+          quantityOnHand: stock,
+        }),
+      });
+    },
+    onSuccess: async () => {
+      setMessage('Listing updated. Stock and details are live for customers.');
+      setError(null);
+      resetFormFields();
+      await qc.invalidateQueries({ queryKey: ['seller-products', sellerId] });
+      await qc.invalidateQueries({ queryKey: ['seller-inventory', sellerId] });
     },
     onError: (err: Error) => setError(err.message),
   });
@@ -1014,30 +1129,48 @@ function ProductsPanel() {
 
   if (!sellerId) return <Navigate to="/seller/apply" replace />;
 
+  const formOpen = showForm || Boolean(editingId);
+
   return (
     <div className={styles.stack}>
       <div className={styles.row} style={{ justifyContent: 'space-between' }}>
         <p className={styles.muted} style={{ margin: 0 }}>
-          You own inventory and fulfilment for every listing.
+          You own inventory and fulfilment for every listing. Keep stock updated so customers can
+          add items to cart.
         </p>
-        <button type="button" className={styles.btn} onClick={() => setShowForm((v) => !v)}>
-          {showForm ? 'Close form' : 'New listing'}
+        <button
+          type="button"
+          className={styles.btn}
+          onClick={() => {
+            if (formOpen) {
+              setShowForm(false);
+              resetFormFields();
+            } else {
+              resetFormFields();
+              setShowForm(true);
+            }
+          }}
+        >
+          {formOpen ? 'Close form' : 'New listing'}
         </button>
       </div>
 
-      {showForm && (
+      {formOpen && (
         <form
           className={`${styles.panel} ${styles.stack}`}
           onSubmit={(e) => {
             e.preventDefault();
-            create.mutate();
+            if (editingId) saveEdit.mutate();
+            else create.mutate();
           }}
         >
           <div className={styles.panelHead}>
-            <h3>New product</h3>
+            <h3>{editingId ? 'Edit listing' : 'New product'}</h3>
           </div>
           <p className={styles.muted} style={{ margin: 0 }}>
-            Just the basics customers need. Stock codes are created for you in the background.
+            {editingId
+              ? 'Update name, description, photo, price, category, or stock. Changes apply without removing the listing.'
+              : 'Just the basics customers need. Stock codes are created for you in the background.'}
           </p>
           <label className={styles.field}>
             Product name
@@ -1061,9 +1194,9 @@ function ProductsPanel() {
             />
           </label>
           <label className={styles.field}>
-            Photo
+            Photo{editingId ? ' (optional — leave blank to keep current)' : ''}
             <input
-              required
+              required={!editingId}
               type="file"
               accept="image/jpeg,image/png,image/webp"
               onChange={(e) => setImageFile(e.target.files?.[0] ?? null)}
@@ -1157,8 +1290,16 @@ function ProductsPanel() {
           <p className={styles.muted} style={{ margin: 0 }}>
             Example: type <strong>100</strong> for R100.00 — not cents.
           </p>
-          <button className={styles.btn} type="submit" disabled={create.isPending}>
-            {create.isPending ? 'Saving…' : 'Save draft'}
+          <button
+            className={styles.btn}
+            type="submit"
+            disabled={create.isPending || saveEdit.isPending}
+          >
+            {create.isPending || saveEdit.isPending
+              ? 'Saving…'
+              : editingId
+                ? 'Save changes'
+                : 'Save draft'}
           </button>
         </form>
       )}
@@ -1173,7 +1314,7 @@ function ProductsPanel() {
         {!products.data?.length ? (
           <div className={styles.empty}>
             <strong>No products yet</strong>
-            Create a draft with a photo, then publish it to go live on the storefront.
+            Create a draft with a photo and stock, then publish it to go live on the storefront.
           </div>
         ) : (
           <div className={styles.tableWrap}>
@@ -1181,44 +1322,66 @@ function ProductsPanel() {
               <thead>
                 <tr>
                   <th>Product</th>
+                  <th>Stock</th>
                   <th>Status</th>
                   <th>Sales</th>
                   <th />
                 </tr>
               </thead>
               <tbody>
-                {products.data.map((p) => (
-                  <tr key={p.id}>
-                    <td>
-                      <strong>{p.title}</strong>
-                      <div className={styles.muted}>{p.id}</div>
-                    </td>
-                    <td>
-                      <span className={statusPill(p.status)}>{p.status}</span>
-                    </td>
-                    <td>
-                      {p.status === 'active'
-                        ? soldIds.has(p.id)
-                          ? 'Has sales'
-                          : 'Not yet sold'
-                        : '—'}
-                    </td>
-                    <td>
-                      {(p.status === 'draft' ||
-                        p.status === 'rejected' ||
-                        p.status === 'pending_review') && (
-                        <button
-                          type="button"
-                          className={styles.btnGhost}
-                          disabled={publishListing.isPending}
-                          onClick={() => publishListing.mutate(p.id)}
-                        >
-                          Publish
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                {products.data.map((p) => {
+                  const sku = p.variants[0]?.sku ?? '';
+                  const stock = stockFor(p.id, sku);
+                  return (
+                    <tr key={p.id}>
+                      <td>
+                        <strong>{p.title}</strong>
+                        <div className={styles.muted}>
+                          {formatZarFromCents(p.variants[0]?.priceCents ?? 0)}
+                        </div>
+                      </td>
+                      <td>
+                        <span className={stock < 1 ? styles.pillDanger : styles.pillOk}>
+                          {stock}
+                        </span>
+                      </td>
+                      <td>
+                        <span className={statusPill(p.status)}>{p.status}</span>
+                      </td>
+                      <td>
+                        {p.status === 'active'
+                          ? soldIds.has(p.id)
+                            ? 'Has sales'
+                            : 'Not yet sold'
+                          : '—'}
+                      </td>
+                      <td>
+                        <div className={styles.row}>
+                          <button
+                            type="button"
+                            className={styles.btnGhost}
+                            onClick={() => beginEdit(p)}
+                          >
+                            Edit
+                          </button>
+                          {(p.status === 'draft' ||
+                            p.status === 'rejected' ||
+                            p.status === 'pending_review') && (
+                            <button
+                              type="button"
+                              className={styles.btnGhost}
+                              disabled={publishListing.isPending || stock < 1}
+                              onClick={() => publishListing.mutate(p.id)}
+                              title={stock < 1 ? 'Set stock before publishing' : undefined}
+                            >
+                              Publish
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

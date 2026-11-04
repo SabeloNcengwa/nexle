@@ -117,28 +117,35 @@ export function ProductPage() {
           <div>
             <h2 style={{ fontSize: '1rem', marginBottom: '0.35rem' }}>Options</h2>
             {p.variants.map((v) => {
-              const avail = p.availability?.find((a) => a.sku === v.sku)?.available;
+              const avail = p.availability?.find((a) => a.sku === v.sku)?.available ?? 0;
+              const outOfStock = avail < 1;
               return (
                 <div key={v.sku} className={pdp.variantRow}>
                   <div>
-                    <strong>{v.title}</strong>
+                    <strong>{v.title === 'Default' ? 'Standard' : v.title}</strong>
                     <div className={styles.muted}>
                       {formatZarFromCents(v.priceCents)}
-                      {typeof avail === 'number' ? ` · ${avail} in stock` : ''}
+                      {outOfStock ? ' · Out of stock' : ` · ${avail} in stock`}
                     </div>
                   </div>
                   <button
                     type="button"
                     className={styles.btn}
-                    disabled={add.isPending || avail === 0}
+                    disabled={add.isPending || outOfStock}
                     onClick={() => add.mutate(v.sku)}
                   >
-                    Add to cart
+                    {outOfStock ? 'Out of stock' : add.isPending ? 'Adding…' : 'Add to cart'}
                   </button>
                 </div>
               );
             })}
           </div>
+          {p.availability?.every((a) => a.available < 1) && (
+            <p className={styles.muted}>
+              This item is out of stock. The seller needs to update quantity before you can add it
+              to cart.
+            </p>
+          )}
           {message && <p>{message}</p>}
           {error && <p className={styles.error}>{error}</p>}
         </div>
