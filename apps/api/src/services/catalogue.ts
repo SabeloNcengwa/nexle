@@ -132,6 +132,25 @@ export async function listCategories(includeInactive = false): Promise<Category[
   });
 }
 
+/** Stable default category so sellers never type a category ID. */
+export async function ensureGeneralCategory(): Promise<string> {
+  const ref = db().collection('categories').doc('general');
+  const snap = await ref.get();
+  if (snap.exists) return ref.id;
+  const now = new Date().toISOString();
+  await ref.set({
+    name: 'General',
+    slug: 'general',
+    parentId: null,
+    path: [],
+    sortOrder: 0,
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+  });
+  return ref.id;
+}
+
 export async function createProduct(actor: Actor | undefined, body: unknown): Promise<Product> {
   requireAuthenticatedUser(actor);
   const input = createProductSchema.parse(body);
@@ -148,12 +167,17 @@ export async function createProduct(actor: Actor | undefined, body: unknown): Pr
     throw new AppError('VALIDATION_ERROR', 'Variant SKUs must be unique', 400);
   }
 
+  const categoryId = input.categoryId?.trim() || (await ensureGeneralCategory());
+  const initialStock = input.initialStock ?? 10;
+  const { initialStock: _stock, categoryId: _cat, ...productFields } = input;
+
   const now = new Date().toISOString();
   const productRef = db().collection('products').doc();
   const batch = db().batch();
 
   batch.set(productRef, {
-    ...input,
+    ...productFields,
+    categoryId,
     status: 'draft',
     createdAt: now,
     updatedAt: now,
@@ -165,7 +189,7 @@ export async function createProduct(actor: Actor | undefined, body: unknown): Pr
       productId: productRef.id,
       sellerId: input.sellerId,
       sku: variant.sku,
-      quantityOnHand: 0,
+      quantityOnHand: initialStock,
       quantityReserved: 0,
       updatedAt: now,
     });

@@ -874,9 +874,8 @@ function ProductsPanel() {
   const sellerId = useSellerId();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [categoryId, setCategoryId] = useState('');
-  const [sku, setSku] = useState('SKU-001');
-  const [priceCents, setPriceCents] = useState(1999);
+  const [priceRands, setPriceRands] = useState('100');
+  const [stockQty, setStockQty] = useState('10');
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -903,47 +902,52 @@ function ProductsPanel() {
   const create = useMutation({
     mutationFn: async () => {
       if (!sellerId) throw new Error('No seller account');
-      const productId = crypto.randomUUID().replace(/-/g, '').slice(0, 20);
-      let images: Product['images'] = [];
-      if (imageFile) {
-        const path = `sellers/${sellerId}/products/${productId}/cover.jpg`;
-        const contentType = (
-          imageFile.type === 'image/png'
-            ? 'image/png'
-            : imageFile.type === 'image/webp'
-              ? 'image/webp'
-              : 'image/jpeg'
-        ) as 'image/jpeg' | 'image/png' | 'image/webp';
-        await uploadViaSignedUrl(path, imageFile, contentType);
-        images = [{ path, contentType, sortOrder: 0 }];
-      } else {
-        images = [
-          {
-            path: `sellers/${sellerId}/products/${productId}/placeholder.jpg`,
-            contentType: 'image/jpeg',
-            sortOrder: 0,
-          },
-        ];
+      if (!imageFile) throw new Error('Add a product photo before saving.');
+      const rands = Number(priceRands);
+      if (!Number.isFinite(rands) || rands < 1) {
+        throw new Error('Enter a price in rands (e.g. 100 for R100).');
       }
+      const stock = Math.floor(Number(stockQty));
+      if (!Number.isFinite(stock) || stock < 0) {
+        throw new Error('Enter how many you have in stock.');
+      }
+      const priceCents = Math.round(rands * 100);
+      const productId = crypto.randomUUID().replace(/-/g, '').slice(0, 20);
+      const sku = `NX-${productId.slice(0, 8).toUpperCase()}`;
+      const path = `sellers/${sellerId}/products/${productId}/cover.jpg`;
+      const contentType = (
+        imageFile.type === 'image/png'
+          ? 'image/png'
+          : imageFile.type === 'image/webp'
+            ? 'image/webp'
+            : 'image/jpeg'
+      ) as 'image/jpeg' | 'image/png' | 'image/webp';
+      await uploadViaSignedUrl(path, imageFile, contentType);
+      const images: Product['images'] = [{ path, contentType, sortOrder: 0 }];
       return apiFetch<Product>('/v1/catalogue/products', {
         method: 'POST',
         body: JSON.stringify({
           sellerId,
-          title,
-          description,
-          categoryId,
+          title: title.trim(),
+          description: description.trim(),
           attributes: {},
           images,
           variants: [{ sku, title: 'Default', priceCents, attributes: {} }],
           taxClassification: 'standard',
           handlingTimeDays: 2,
+          initialStock: stock,
         }),
       });
     },
     onSuccess: async () => {
-      setMessage('Draft listing created.');
+      setMessage('Draft listing created. Click Publish when you’re ready for customers to see it.');
       setError(null);
       setShowForm(false);
+      setTitle('');
+      setDescription('');
+      setPriceRands('100');
+      setStockQty('10');
+      setImageFile(null);
       await qc.invalidateQueries({ queryKey: ['seller-products', sellerId] });
     },
     onError: (err: Error) => setError(err.message),
@@ -984,56 +988,73 @@ function ProductsPanel() {
           }}
         >
           <div className={styles.panelHead}>
-            <h3>Create draft listing</h3>
+            <h3>New product</h3>
           </div>
+          <p className={styles.muted} style={{ margin: 0 }}>
+            Just the basics customers need. Stock codes are created for you in the background.
+          </p>
+          <label className={styles.field}>
+            Product name
+            <input
+              required
+              minLength={3}
+              placeholder="e.g. Wireless earbuds"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+            />
+          </label>
+          <label className={styles.field}>
+            Description
+            <textarea
+              required
+              minLength={10}
+              rows={4}
+              placeholder="What are you selling? Condition, size, colour…"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+            />
+          </label>
+          <label className={styles.field}>
+            Photo
+            <input
+              required
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              onChange={(e) => setImageFile(e.target.files?.[0] ?? null)}
+            />
+          </label>
           <div className={styles.split}>
-            <div className={styles.stack}>
-              <label className={styles.field}>
-                Title
-                <input required value={title} onChange={(e) => setTitle(e.target.value)} />
-              </label>
-              <label className={styles.field}>
-                Description
-                <textarea
-                  required
-                  minLength={10}
-                  rows={4}
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                />
-              </label>
-              <label className={styles.field}>
-                Cover image
-                <input
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  onChange={(e) => setImageFile(e.target.files?.[0] ?? null)}
-                />
-              </label>
-            </div>
-            <div className={styles.stack}>
-              <label className={styles.field}>
-                Category ID
-                <input required value={categoryId} onChange={(e) => setCategoryId(e.target.value)} />
-              </label>
-              <label className={styles.field}>
-                SKU
-                <input required value={sku} onChange={(e) => setSku(e.target.value)} />
-              </label>
-              <label className={styles.field}>
-                Price (cents)
-                <input
-                  type="number"
-                  required
-                  min={0}
-                  value={priceCents}
-                  onChange={(e) => setPriceCents(Number(e.target.value))}
-                />
-              </label>
-            </div>
+            <label className={styles.field}>
+              Price (Rands)
+              <input
+                type="number"
+                required
+                min={1}
+                step={1}
+                inputMode="decimal"
+                placeholder="100"
+                value={priceRands}
+                onChange={(e) => setPriceRands(e.target.value)}
+              />
+            </label>
+            <label className={styles.field}>
+              How many in stock
+              <input
+                type="number"
+                required
+                min={0}
+                step={1}
+                inputMode="numeric"
+                value={stockQty}
+                onChange={(e) => setStockQty(e.target.value)}
+              />
+            </label>
           </div>
-          <button className={styles.btn} type="submit">
-            Create draft
+          <p className={styles.muted} style={{ margin: 0 }}>
+            Example: type <strong>100</strong> for R100.00 — not cents.
+          </p>
+          <button className={styles.btn} type="submit" disabled={create.isPending}>
+            {create.isPending ? 'Saving…' : 'Save draft'}
           </button>
         </form>
       )}

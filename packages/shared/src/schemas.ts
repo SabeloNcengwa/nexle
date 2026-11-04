@@ -151,13 +151,16 @@ export const createProductSchema = z.object({
   sellerId: z.string().min(1),
   title: z.string().min(3).max(200),
   description: z.string().min(10).max(10000),
-  categoryId: z.string().min(1),
+  /** Optional — API assigns General when omitted. */
+  categoryId: z.string().min(1).optional(),
   brand: z.string().max(100).optional(),
   attributes: z.record(z.string(), z.string()).default({}),
   images: z.array(productImageSchema).max(12).default([]),
   variants: z.array(productVariantSchema).min(1).max(50),
   taxClassification: z.string().min(1).max(40),
   handlingTimeDays: z.number().int().min(0).max(60),
+  /** Starting stock for each variant (defaults to 10). */
+  initialStock: z.number().int().nonnegative().max(100_000).optional().default(10),
   shippingDimensions: z
     .object({
       lengthCm: z.number().positive(),
