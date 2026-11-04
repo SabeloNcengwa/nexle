@@ -1127,6 +1127,21 @@ function ProductsPanel() {
     onError: (err: Error) => setError(err.message),
   });
 
+  const deleteListing = useMutation({
+    mutationFn: (productId: string) =>
+      apiFetch('/v1/catalogue/products/delete', {
+        method: 'POST',
+        body: JSON.stringify({ productId }),
+      }),
+    onSuccess: async () => {
+      setMessage('Product removed from your catalogue and the storefront.');
+      if (editingId) resetFormFields();
+      await qc.invalidateQueries({ queryKey: ['seller-products', sellerId] });
+      await qc.invalidateQueries({ queryKey: ['seller-inventory', sellerId] });
+    },
+    onError: (err: Error) => setError(err.message),
+  });
+
   if (!sellerId) return <Navigate to="/seller/apply" replace />;
 
   const formOpen = showForm || Boolean(editingId);
@@ -1377,6 +1392,22 @@ function ProductsPanel() {
                               Publish
                             </button>
                           )}
+                          <button
+                            type="button"
+                            className={styles.btnGhost}
+                            disabled={deleteListing.isPending}
+                            onClick={() => {
+                              if (
+                                window.confirm(
+                                  `Remove “${p.title}” from your catalogue and the storefront?`,
+                                )
+                              ) {
+                                deleteListing.mutate(p.id);
+                              }
+                            }}
+                          >
+                            Delete
+                          </button>
                         </div>
                       </td>
                     </tr>

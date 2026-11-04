@@ -104,6 +104,15 @@ catalogueRouter.post(
 );
 
 catalogueRouter.post(
+  '/products/delete',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const data = await catalogue.deleteProduct(req.actor, req.body);
+    res.json({ data });
+  }),
+);
+
+catalogueRouter.post(
   '/products/moderate',
   requireAuth,
   asyncHandler(async (req, res) => {

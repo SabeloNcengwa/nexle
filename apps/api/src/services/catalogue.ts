@@ -1,6 +1,7 @@
 import {
   createProductSchema,
   DEFAULT_STORE_CATEGORIES,
+  deleteProductSchema,
   moderateProductSchema,
   productSearchQuerySchema,
   reviewCategorySuggestionSchema,
@@ -569,6 +570,35 @@ export async function submitProductForReview(
   return mapProduct(ref.id, updated.data()!);
 }
 
+/** Soft-delete: removes the listing from the storefront catalogue. */
+export async function deleteProduct(
+  actor: Actor | undefined,
+  body: unknown,
+): Promise<Product> {
+  requireAuthenticatedUser(actor);
+  const { productId } = deleteProductSchema.parse(body);
+  const ref = db().collection('products').doc(productId);
+  const snap = await ref.get();
+  if (!snap.exists) throw new AppError('NOT_FOUND', 'Product not found', 404);
+  const data = snap.data()!;
+  assertSellerPermission(actor, data.sellerId, 'seller:manage_products');
+
+  if (data.status === 'archived') {
+    return mapProduct(ref.id, data);
+  }
+
+  const now = new Date().toISOString();
+  await ref.update({ status: 'archived', updatedAt: now });
+  await writeAuditLog({
+    actorUid: actor.uid,
+    action: 'product.archived',
+    resourceType: 'products',
+    resourceId: productId,
+  });
+  const updated = await ref.get();
+  return mapProduct(ref.id, updated.data()!);
+}
+
 export async function moderateProduct(actor: Actor | undefined, body: unknown): Promise<Product> {
   requirePlatformPermission(actor, ['super_admin', 'catalogue_moderator']);
   const input = moderateProductSchema.parse(body);
@@ -720,7 +750,9 @@ export async function listSellerProducts(
     .orderBy('updatedAt', 'desc')
     .limit(100)
     .get();
-  return snap.docs.map((d) => mapProduct(d.id, d.data()));
+  return snap.docs
+    .map((d) => mapProduct(d.id, d.data()))
+    .filter((p) => p.status !== 'archived');
 }
 
 export async function listPendingProducts(actor: Actor | undefined): Promise<Product[]> {

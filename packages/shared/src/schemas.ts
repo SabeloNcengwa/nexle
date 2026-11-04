@@ -179,6 +179,10 @@ export const submitProductForReviewSchema = z.object({
   productId: z.string().min(1),
 });
 
+export const deleteProductSchema = z.object({
+  productId: z.string().min(1),
+});
+
 export const moderateProductSchema = z.object({
   productId: z.string().min(1),
   decision: z.enum(['active', 'rejected']),
