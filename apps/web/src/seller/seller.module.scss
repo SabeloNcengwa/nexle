@@ -515,6 +515,55 @@
   background: rgba(15, 122, 74, 0.04);
 }
 
+.sigPad {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.sigPadFrame {
+  position: relative;
+  border: 1px dashed var(--sp-line);
+  border-radius: 12px;
+  background:
+    linear-gradient(#fff, #fff),
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent 11px,
+      rgba(228, 233, 239, 0.55) 11px,
+      rgba(228, 233, 239, 0.55) 12px
+    );
+  overflow: hidden;
+  touch-action: none;
+}
+
+.sigCanvas {
+  display: block;
+  width: 100%;
+  touch-action: none;
+  cursor: crosshair;
+  background: transparent;
+}
+
+.sigHint {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  color: var(--sp-muted);
+  font-family: var(--sp-display);
+  font-size: 1.05rem;
+  opacity: 0.55;
+}
+
+.sigPadActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  align-items: center;
+}
+
 .storeLink {
   display: inline-flex;
   align-items: center;
