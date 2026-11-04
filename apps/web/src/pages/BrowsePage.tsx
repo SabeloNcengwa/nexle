@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { apiFetch } from '../lib/api';
+import { primaryProductImageUrl } from '../lib/productImage';
 import styles from '../components/ui.module.scss';
 import browse from './BrowsePage.module.scss';
 
@@ -67,9 +68,12 @@ export function BrowsePage() {
           const hasPromo =
             typeof p.variants[0]?.promotionalPriceCents === 'number' &&
             p.variants[0]!.promotionalPriceCents! < (p.variants[0]?.priceCents ?? 0);
+          const imageUrl = primaryProductImageUrl(p);
           return (
             <Link key={p.id} to={`/products/${p.id}`} className={styles.productCard}>
-              <div className={styles.productMedia}>Nexle</div>
+              <div className={styles.productMedia}>
+                {imageUrl ? <img src={imageUrl} alt="" loading="lazy" /> : 'Nexle'}
+              </div>
               <div className={styles.productBody}>
                 {hasPromo ? (
                   <span className={styles.badge}>Deal</span>

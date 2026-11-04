@@ -23,8 +23,28 @@ import {
   requirePlatformPermission,
 } from '../permissions/helpers.js';
 import { writeAuditLog } from './audit.js';
+import { publicProductImageUrl } from './uploads.js';
 
 function mapProduct(id: string, data: DocData): Product {
+  const rawImages = Array.isArray(data.images) ? data.images : [];
+  const images = rawImages.map((img: DocData, index: number) => {
+    const path = String(img.path ?? '');
+    let url: string | undefined;
+    if (path && !path.includes('/placeholder.')) {
+      try {
+        url = publicProductImageUrl(path);
+      } catch {
+        url = undefined;
+      }
+    }
+    return {
+      path,
+      contentType: img.contentType as Product['images'][number]['contentType'],
+      sortOrder: Number(img.sortOrder ?? index),
+      ...(url ? { url } : {}),
+    };
+  });
+
   return {
     id,
     sellerId: String(data.sellerId),
@@ -33,7 +53,7 @@ function mapProduct(id: string, data: DocData): Product {
     categoryId: String(data.categoryId),
     brand: data.brand,
     attributes: data.attributes ?? {},
-    images: data.images ?? [],
+    images,
     status: data.status,
     moderation: data.moderation,
     variants: data.variants ?? [],
@@ -165,14 +185,15 @@ export async function updateProduct(actor: Actor | undefined, body: unknown): Pr
   const existing = snap.data()!;
   assertSellerPermission(actor, existing.sellerId, 'seller:manage_products');
 
-  if (existing.status === 'pending_review') {
-    throw new AppError('INVALID_STATE', 'Cannot edit product while pending review', 409);
-  }
-
   const { productId, ...rest } = input;
   const now = new Date().toISOString();
+  // Edits take an active listing offline until the seller publishes again (no admin gate).
   const nextStatus =
-    existing.status === 'active' || existing.status === 'rejected' ? 'draft' : existing.status;
+    existing.status === 'active' ||
+    existing.status === 'rejected' ||
+    existing.status === 'pending_review'
+      ? 'draft'
+      : existing.status;
 
   await ref.update({
     ...rest,
@@ -214,19 +235,25 @@ export async function submitProductForReview(
   const data = snap.data()!;
   assertSellerPermission(actor, data.sellerId, 'seller:manage_products');
 
-  if (!['draft', 'rejected'].includes(data.status)) {
-    throw new AppError('INVALID_STATE', 'Only draft or rejected products can be submitted', 409);
+  if (!['draft', 'rejected', 'pending_review'].includes(data.status)) {
+    throw new AppError('INVALID_STATE', 'Only draft or rejected products can be published', 409);
   }
   if (!data.images?.length) {
-    throw new AppError('INCOMPLETE', 'At least one image is required before review', 400);
+    throw new AppError('INCOMPLETE', 'At least one image is required before publishing', 400);
+  }
+  const hasRealImage = (data.images as Array<{ path?: string }>).some(
+    (img) => img.path && !String(img.path).includes('/placeholder.'),
+  );
+  if (!hasRealImage) {
+    throw new AppError('INCOMPLETE', 'Upload a product photo before publishing', 400);
   }
   assertSellerAllowedInPilot(getRuntimeEnv(), String(data.sellerId));
 
   const now = new Date().toISOString();
-  await ref.update({ status: 'pending_review', updatedAt: now });
+  await ref.update({ status: 'active', updatedAt: now });
   await writeAuditLog({
     actorUid: actor.uid,
-    action: 'product.submitted_for_review',
+    action: 'product.published',
     resourceType: 'products',
     resourceId: productId,
   });

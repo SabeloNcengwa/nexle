@@ -10,6 +10,7 @@ import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
 import { apiFetch } from '../lib/api';
+import { primaryProductImageUrl } from '../lib/productImage';
 import styles from '../components/ui.module.scss';
 import pdp from './ProductPage.module.scss';
 
@@ -92,6 +93,7 @@ export function ProductPage() {
   const p = product.data;
   const price = p.variants[0]?.promotionalPriceCents ?? p.variants[0]?.priceCents ?? 0;
   const summary = reviews.data?.summary ?? p.ratingSummary ?? { averageTimes100: 0, count: 0 };
+  const imageUrl = primaryProductImageUrl(p);
 
   return (
     <article className={styles.stack}>
@@ -99,7 +101,9 @@ export function ProductPage() {
         ← Back to results
       </Link>
       <div className={pdp.layout}>
-        <div className={pdp.media}>Nexle</div>
+        <div className={pdp.media}>
+          {imageUrl ? <img src={imageUrl} alt={p.title} /> : 'Nexle'}
+        </div>
         <div className={pdp.buyBox}>
           <span className={styles.badgeMuted}>{p.brand || 'Marketplace seller'}</span>
           <h1 style={{ margin: 0, fontSize: '1.45rem' }}>{p.title}</h1>

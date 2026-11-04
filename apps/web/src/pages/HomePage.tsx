@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { BrandLogo } from '../components/BrandLogo';
 import { apiFetch } from '../lib/api';
+import { primaryProductImageUrl } from '../lib/productImage';
 import ui from '../components/ui.module.scss';
 import styles from './HomePage.module.scss';
 
@@ -116,9 +117,12 @@ export function HomePage() {
             const hasPromo =
               typeof p.variants[0]?.promotionalPriceCents === 'number' &&
               p.variants[0]!.promotionalPriceCents! < (p.variants[0]?.priceCents ?? 0);
+            const imageUrl = primaryProductImageUrl(p);
             return (
               <Link key={p.id} to={`/products/${p.id}`} className={ui.productCard}>
-                <div className={ui.productMedia}>Nexle</div>
+                <div className={ui.productMedia}>
+                  {imageUrl ? <img src={imageUrl} alt="" loading="lazy" /> : 'Nexle'}
+                </div>
                 <div className={ui.productBody}>
                   {hasPromo ? <span className={ui.badge}>Deal</span> : null}
                   <h3 className={ui.productTitle}>{p.title}</h3>

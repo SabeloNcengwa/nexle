@@ -18,13 +18,21 @@ import {
   type Shipment,
 } from '@mavundla/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useSellerId } from '../hooks/useSellerId';
 import { apiFetch } from '../lib/api';
 import { uploadViaSignedUrl } from '../lib/supabaseUpload';
 import { openMerchantContractPrint } from '../seller/merchantContractPrint';
+import {
+  SignaturePad,
+  type SignaturePadHandle,
+} from '../seller/SignaturePad';
 import styles from '../seller/seller.module.scss';
+
+const UPLOADABLE_DOC_KINDS = (
+  [...REQUIRED_SELLER_DOCUMENT_KINDS, ...(['vat_certificate'] as const)] as SellerDocumentKind[]
+).filter((k) => k !== 'signed_merchant_contract');
 
 const KIND_LABELS: Record<SellerDocumentKind, string> = {
   cipc_registration: 'CIPC company registration',
@@ -34,8 +42,6 @@ const KIND_LABELS: Record<SellerDocumentKind, string> = {
   signed_merchant_contract: 'Signed merchant agreement',
   vat_certificate: 'VAT certificate (optional)',
 };
-
-const OPTIONAL_KINDS: SellerDocumentKind[] = ['vat_certificate'];
 
 function statusPill(status: string) {
   if (['active', 'delivered', 'paid', 'approved', 'published'].includes(status)) {
@@ -51,7 +57,57 @@ function statusPill(status: string) {
   return styles.pillBrand;
 }
 
-function pageMeta(pathname: string, approved: boolean): { title: string; subtitle: string } {
+type SellerGate = 'approved' | 'pending_review' | 'can_apply' | 'staff_only';
+
+function applicationStatusCopy(status: string | undefined): {
+  title: string;
+  detail: string;
+  label: string;
+} {
+  switch (status) {
+    case 'submitted':
+      return {
+        label: 'Submitted — waiting for review',
+        title: 'Application completed',
+        detail:
+          'Your documents and signed agreement are with Nexle staff. We’ll review them next. You don’t need to resubmit — watch this page for updates.',
+      };
+    case 'under_review':
+      return {
+        label: 'Under review',
+        title: 'Staff are reviewing your application',
+        detail:
+          'Nexle is checking your company documents and agreement. After approval, Seller Centre unlocks orders, catalogue, and payouts.',
+      };
+    case 'approved':
+      return {
+        label: 'Approved',
+        title: 'You’re approved',
+        detail: 'Your seller account is active. Use Home to manage orders and catalogue.',
+      };
+    case 'rejected':
+      return {
+        label: 'Needs changes',
+        title: 'Application needs updates',
+        detail:
+          'Staff rejected this application. Update your details or documents, then submit again.',
+      };
+    case 'draft':
+      return {
+        label: 'Draft',
+        title: 'Application in progress',
+        detail: 'Finish your details, sign the agreement, upload documents, then submit.',
+      };
+    default:
+      return {
+        label: 'Not started',
+        title: 'Become a Nexle seller',
+        detail: 'Start an application when you’re ready to sell on the marketplace.',
+      };
+  }
+}
+
+function pageMeta(pathname: string, gate: SellerGate): { title: string; subtitle: string } {
   if (pathname.includes('/apply')) {
     return {
       title: 'Join as a seller',
@@ -82,31 +138,41 @@ function pageMeta(pathname: string, approved: boolean): { title: string; subtitl
       subtitle: 'See what you’ve earned and request payouts when eligible.',
     };
   }
+  if (gate === 'pending_review') {
+    return {
+      title: 'Application status',
+      subtitle: 'Submitted — waiting for Nexle staff to review.',
+    };
+  }
   return {
-    title: approved ? 'Seller home' : 'Seller Centre',
-    subtitle: approved
-      ? 'Your command centre — sales, fulfilment, and catalogue in one place.'
-      : 'Apply once. After approval, you manage every order yourself.',
+    title: gate === 'approved' ? 'Seller home' : 'Seller Centre',
+    subtitle:
+      gate === 'approved'
+        ? 'Your command centre — sales, fulfilment, and catalogue in one place.'
+        : 'Apply once. After approval, you manage every order yourself.',
   };
 }
 
-function SellerShell({ approved, children }: { approved: boolean; children: ReactNode }) {
+function SellerShell({ gate, children }: { gate: SellerGate; children: ReactNode }) {
   const { profile, logout } = useAuth();
   const location = useLocation();
-  const meta = pageMeta(location.pathname, approved);
+  const meta = pageMeta(location.pathname, gate);
 
-  const links = approved
-    ? [
-        { to: '/seller', end: true, label: 'Home', icon: '◆' },
-        { to: '/seller/orders', label: 'Orders', icon: '▣' },
-        { to: '/seller/products', label: 'Catalogue', icon: '◇' },
-        { to: '/seller/returns', label: 'Returns', icon: '↺' },
-        { to: '/seller/finance', label: 'Finance', icon: 'R' },
-      ]
-    : [
-        { to: '/seller', end: true, label: 'Home', icon: '◆' },
-        { to: '/seller/apply', label: 'Application', icon: '✎' },
-      ];
+  const links =
+    gate === 'approved'
+      ? [
+          { to: '/seller', end: true, label: 'Home', icon: '◆' },
+          { to: '/seller/orders', label: 'Orders', icon: '▣' },
+          { to: '/seller/products', label: 'Catalogue', icon: '◇' },
+          { to: '/seller/returns', label: 'Returns', icon: '↺' },
+          { to: '/seller/finance', label: 'Finance', icon: 'R' },
+        ]
+      : gate === 'can_apply'
+        ? [
+            { to: '/seller', end: true, label: 'Home', icon: '◆' },
+            { to: '/seller/apply', label: 'Application', icon: '✎' },
+          ]
+        : [{ to: '/seller', end: true, label: 'Home', icon: '◆' }];
 
   return (
     <div className={styles.shell}>
@@ -157,16 +223,9 @@ function SellerShell({ approved, children }: { approved: boolean; children: Reac
   );
 }
 
-function OverviewPanel() {
-  const { profile } = useAuth();
+function OverviewPanel({ gate, latestApp }: { gate: SellerGate; latestApp?: SellerApplication }) {
   const sellerId = useSellerId();
-  const apps = useQuery({
-    queryKey: ['my-applications'],
-    queryFn: () => apiFetch<SellerApplication[]>('/v1/sellers/applications/mine'),
-  });
-  const latestApp = apps.data?.[0];
-  const approved = Boolean(sellerId);
-  const staffOnly = (profile?.platformRoles?.length ?? 0) > 0 && !approved;
+  const approved = gate === 'approved';
 
   const orders = useQuery({
     queryKey: ['seller-orders', sellerId],
@@ -211,10 +270,10 @@ function OverviewPanel() {
   }, [orders.data, products.data]);
 
   if (!approved) {
-    const status = latestApp?.status ?? 'not started';
     const adminUrl = import.meta.env.VITE_ADMIN_BASE_URL ?? 'http://localhost:5174';
+    const copy = applicationStatusCopy(latestApp?.status);
 
-    if (staffOnly) {
+    if (gate === 'staff_only') {
       return (
         <>
           <div className={styles.heroBanner}>
@@ -239,6 +298,33 @@ function OverviewPanel() {
       );
     }
 
+    if (gate === 'pending_review') {
+      return (
+        <>
+          <div className={styles.heroBanner}>
+            <div>
+              <h2>{copy.title}</h2>
+              <p>{copy.detail}</p>
+            </div>
+            <span className={statusPill(latestApp?.status ?? 'submitted')}>{copy.label}</span>
+          </div>
+          <div className={styles.panel}>
+            <div className={styles.panelHead}>
+              <h3>{latestApp?.businessName ?? 'Your application'}</h3>
+              <span className={statusPill(latestApp?.status ?? 'submitted')}>
+                {latestApp?.status}
+              </span>
+            </div>
+            <ol className={styles.muted} style={{ margin: 0, paddingLeft: '1.2rem' }}>
+              <li>Nexle staff review your company documents and e-signed agreement.</li>
+              <li>If anything is missing, we&apos;ll ask you to update — then you can resubmit.</li>
+              <li>When approved, this portal unlocks orders, catalogue, returns, and payouts.</li>
+            </ol>
+          </div>
+        </>
+      );
+    }
+
     return (
       <>
         <div className={styles.heroBanner}>
@@ -256,12 +342,9 @@ function OverviewPanel() {
         <div className={styles.panel}>
           <div className={styles.panelHead}>
             <h3>Application status</h3>
-            <span className={statusPill(status === 'not started' ? 'draft' : status)}>{status}</span>
+            <span className={statusPill(latestApp?.status ?? 'draft')}>{copy.label}</span>
           </div>
-          <p className={styles.muted}>
-            Upload company documents for staff review. Once approved, your Seller Centre unlocks
-            orders, catalogue, and payouts.
-          </p>
+          <p className={styles.muted}>{copy.detail}</p>
         </div>
       </>
     );
@@ -362,7 +445,7 @@ function OverviewPanel() {
               <strong>{stats.live}</strong>
             </li>
             <li className={styles.attentionItem}>
-              <span>Awaiting moderation</span>
+              <span>Draft / not live</span>
               <strong>{stats.draft}</strong>
             </li>
             <li className={styles.attentionItem}>
@@ -376,13 +459,22 @@ function OverviewPanel() {
   );
 }
 
-function ApplicationsPanel() {
+function ApplicationsPanel({ gate, latestApp }: { gate: SellerGate; latestApp?: SellerApplication }) {
   const { user } = useAuth();
   const qc = useQueryClient();
   const apps = useQuery({
     queryKey: ['my-applications'],
     queryFn: () => apiFetch<SellerApplication[]>('/v1/sellers/applications/mine'),
   });
+
+  if (gate === 'pending_review' || gate === 'approved') {
+    const copy = applicationStatusCopy(latestApp?.status ?? (gate === 'approved' ? 'approved' : 'submitted'));
+    return <Navigate to="/seller" replace state={{ notice: copy.label }} />;
+  }
+
+  if (gate === 'staff_only') {
+    return <Navigate to="/seller" replace />;
+  }
 
   const [form, setForm] = useState({
     businessName: '',
@@ -400,6 +492,8 @@ function ApplicationsPanel() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState<SellerDocumentKind | null>(null);
+  const [signing, setSigning] = useState(false);
+  const signaturePadRef = useRef<SignaturePadHandle | null>(null);
 
   const editableApp =
     apps.data?.find((a) => a.id === activeAppId) ??
@@ -510,6 +604,38 @@ function ApplicationsPanel() {
   };
 
   const requiredReady = REQUIRED_SELLER_DOCUMENT_KINDS.every((k) => docs[k]);
+  const agreementSigned = Boolean(docs.signed_merchant_contract);
+  const showNewApplicationForm =
+    gate === 'can_apply' && !editableApp && !(apps.data && apps.data.length > 0);
+
+  const saveESignature = async () => {
+    const appId = editableApp?.id ?? activeAppId;
+    if (!appId || !user) {
+      setError('Save a draft application before signing the agreement.');
+      return;
+    }
+    if (!signaturePadRef.current || signaturePadRef.current.isEmpty()) {
+      setError('Draw your signature on the pad first.');
+      return;
+    }
+    setSigning(true);
+    setError(null);
+    try {
+      const blob = await signaturePadRef.current.toPngBlob();
+      const file = new File(
+        [blob],
+        `esignature_${MERCHANT_CONTRACT_VERSION}.png`,
+        { type: 'image/png' },
+      );
+      await uploadDoc('signed_merchant_contract', file);
+      setMessage('Agreement signed in-app and saved with your application.');
+      signaturePadRef.current.clear();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save signature');
+    } finally {
+      setSigning(false);
+    }
+  };
 
   return (
     <div className={styles.stack}>
@@ -565,7 +691,7 @@ function ApplicationsPanel() {
         </section>
       )}
 
-      {(!editableApp || !apps.data?.length) && (
+      {showNewApplicationForm && (
         <form
           className={`${styles.panel} ${styles.stack}`}
           onSubmit={(e: FormEvent) => {
@@ -629,8 +755,8 @@ function ApplicationsPanel() {
             <span className={styles.pillBrand}>Version {MERCHANT_CONTRACT.version}</span>
           </div>
           <p className={styles.muted} style={{ margin: 0 }}>
-            {MERCHANT_CONTRACT.intro[0]} Print version {MERCHANT_CONTRACT.version}, have an
-            authorised person sign it, then upload the signed copy with your other documents.
+            {MERCHANT_CONTRACT.intro[0]} Read version {MERCHANT_CONTRACT.version}, then sign below
+            in the app with your finger or mouse. Upload your other company documents separately.
           </p>
           <ol className={styles.muted} style={{ margin: 0, paddingLeft: '1.2rem' }}>
             {MERCHANT_CONTRACT.clauses.map((clause) => (
@@ -642,19 +768,47 @@ function ApplicationsPanel() {
               </li>
             ))}
           </ol>
-          <button
-            type="button"
-            className={styles.btnGhost}
-            onClick={() => {
-              try {
-                openMerchantContractPrint(editableApp?.businessName || form.businessName);
-              } catch (err) {
-                setError(err instanceof Error ? err.message : 'Could not open the contract');
-              }
-            }}
-          >
-            Open agreement to print and sign
-          </button>
+          <div className={styles.row}>
+            <button
+              type="button"
+              className={styles.btnGhost}
+              onClick={() => {
+                try {
+                  openMerchantContractPrint(editableApp?.businessName || form.businessName);
+                } catch (err) {
+                  setError(err instanceof Error ? err.message : 'Could not open the contract');
+                }
+              }}
+            >
+              View full agreement
+            </button>
+            {agreementSigned && (
+              <span className={styles.pillOk}>Signed · {docs.signed_merchant_contract!.fileName}</span>
+            )}
+          </div>
+          <div className={styles.stack}>
+            <strong>Draw your signature</strong>
+            <p className={styles.muted} style={{ margin: 0 }}>
+              An authorised person for {editableApp?.businessName || form.businessName || 'the business'}{' '}
+              should sign here.
+            </p>
+            <SignaturePad
+              padRef={signaturePadRef}
+              disabled={signing || uploading === 'signed_merchant_contract'}
+            />
+            <button
+              type="button"
+              className={styles.btn}
+              disabled={signing || uploading === 'signed_merchant_contract'}
+              onClick={() => void saveESignature()}
+            >
+              {signing || uploading === 'signed_merchant_contract'
+                ? 'Saving signature…'
+                : agreementSigned
+                  ? 'Re-sign & save agreement'
+                  : 'Sign & save agreement'}
+            </button>
+          </div>
         </section>
       )}
 
@@ -666,9 +820,12 @@ function ApplicationsPanel() {
               {requiredReady ? 'Ready to submit' : 'Required docs incomplete'}
             </span>
           </div>
-          <p className={styles.muted}>PDF, JPEG, or PNG · max 10MB each</p>
+          <p className={styles.muted}>
+            Upload CIPC, ID, address, and bank proof here. The merchant agreement is signed above —
+            no scan needed. PDF, JPEG, or PNG · max 10MB each.
+          </p>
           <div className={styles.docGrid}>
-            {[...REQUIRED_SELLER_DOCUMENT_KINDS, ...OPTIONAL_KINDS].map((kind) => (
+            {UPLOADABLE_DOC_KINDS.map((kind) => (
               <div
                 key={kind}
                 className={`${styles.docCard} ${docs[kind] ? styles.docCardReady : ''}`}
@@ -679,7 +836,7 @@ function ApplicationsPanel() {
                     kind as (typeof REQUIRED_SELLER_DOCUMENT_KINDS)[number],
                   )
                     ? ' *'
-                    : ''}
+                    : ' (optional)'}
                 </strong>
                 <input
                   type="file"
@@ -792,14 +949,14 @@ function ProductsPanel() {
     onError: (err: Error) => setError(err.message),
   });
 
-  const submitReview = useMutation({
+  const publishListing = useMutation({
     mutationFn: (productId: string) =>
       apiFetch('/v1/catalogue/products/submit', {
         method: 'POST',
         body: JSON.stringify({ productId }),
       }),
     onSuccess: async () => {
-      setMessage('Sent for catalogue review.');
+      setMessage('Listing published — it’s live on the storefront.');
       await qc.invalidateQueries({ queryKey: ['seller-products', sellerId] });
     },
     onError: (err: Error) => setError(err.message),
@@ -891,7 +1048,7 @@ function ProductsPanel() {
         {!products.data?.length ? (
           <div className={styles.empty}>
             <strong>No products yet</strong>
-            Create a draft, then submit it for review before it goes live.
+            Create a draft with a photo, then publish it to go live on the storefront.
           </div>
         ) : (
           <div className={styles.tableWrap}>
@@ -922,13 +1079,16 @@ function ProductsPanel() {
                         : '—'}
                     </td>
                     <td>
-                      {(p.status === 'draft' || p.status === 'rejected') && (
+                      {(p.status === 'draft' ||
+                        p.status === 'rejected' ||
+                        p.status === 'pending_review') && (
                         <button
                           type="button"
                           className={styles.btnGhost}
-                          onClick={() => submitReview.mutate(p.id)}
+                          disabled={publishListing.isPending}
+                          onClick={() => publishListing.mutate(p.id)}
                         >
-                          Submit for review
+                          Publish
                         </button>
                       )}
                     </td>
@@ -1458,14 +1618,35 @@ function FinancePanel() {
 }
 
 export function SellerCentrePage() {
+  const { profile } = useAuth();
   const sellerId = useSellerId();
+  const apps = useQuery({
+    queryKey: ['my-applications'],
+    queryFn: () => apiFetch<SellerApplication[]>('/v1/sellers/applications/mine'),
+  });
+  const latestApp = apps.data?.[0];
   const approved = Boolean(sellerId);
+  const staffOnly = (profile?.platformRoles?.length ?? 0) > 0 && !approved;
+  const pendingReview =
+    !approved &&
+    (latestApp?.status === 'submitted' || latestApp?.status === 'under_review');
+
+  const gate: SellerGate = approved
+    ? 'approved'
+    : staffOnly
+      ? 'staff_only'
+      : pendingReview
+        ? 'pending_review'
+        : 'can_apply';
 
   return (
-    <SellerShell approved={approved}>
+    <SellerShell gate={gate}>
       <Routes>
-        <Route index element={<OverviewPanel />} />
-        <Route path="apply" element={<ApplicationsPanel />} />
+        <Route index element={<OverviewPanel gate={gate} latestApp={latestApp} />} />
+        <Route
+          path="apply"
+          element={<ApplicationsPanel gate={gate} latestApp={latestApp} />}
+        />
         <Route path="products" element={<ProductsPanel />} />
         <Route path="orders" element={<OrdersPanel />} />
         <Route path="returns" element={<ReturnsPanel />} />

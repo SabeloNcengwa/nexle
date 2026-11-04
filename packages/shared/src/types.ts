@@ -125,6 +125,8 @@ export interface ProductImage {
   path: string;
   contentType: 'image/jpeg' | 'image/png' | 'image/webp';
   sortOrder: number;
+  /** Public storefront URL when served from product-images bucket. */
+  url?: string;
 }
 
 export interface Product {
