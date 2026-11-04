@@ -111,6 +111,27 @@ export interface Category {
   path: string[];
   sortOrder: number;
   isActive: boolean;
+  /** Seller-suggested categories stay inactive until staff approve. */
+  pendingApproval?: boolean;
+  suggestionId?: string;
+}
+
+export type CategorySuggestionStatus = 'pending' | 'approved' | 'rejected';
+
+export interface CategorySuggestion {
+  id: string;
+  proposedName: string;
+  sellerId: string;
+  proposedByUid: string;
+  status: CategorySuggestionStatus;
+  categoryId?: string;
+  reviewedName?: string;
+  reviewedSlug?: string;
+  reviewReason?: string;
+  reviewerUid?: string;
+  reviewedAt?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface ProductVariant {

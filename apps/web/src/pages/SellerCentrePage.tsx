@@ -5,6 +5,7 @@ import {
   MERCHANT_CONTRACT,
   MERCHANT_CONTRACT_VERSION,
   REQUIRED_SELLER_DOCUMENT_KINDS,
+  type Category,
   type LedgerEntry,
   type Payout,
   type Product,
@@ -18,7 +19,7 @@ import {
   type Shipment,
 } from '@mavundla/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useSellerId } from '../hooks/useSellerId';
 import { apiFetch } from '../lib/api';
@@ -876,11 +877,19 @@ function ProductsPanel() {
   const [description, setDescription] = useState('');
   const [priceRands, setPriceRands] = useState('100');
   const [stockQty, setStockQty] = useState('10');
+  const [categoryMode, setCategoryMode] = useState<'select' | 'suggest'>('select');
+  const [categoryId, setCategoryId] = useState('');
+  const [suggestedCategory, setSuggestedCategory] = useState('');
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const qc = useQueryClient();
+
+  const categories = useQuery({
+    queryKey: ['store-categories'],
+    queryFn: () => apiFetch<Category[]>('/v1/catalogue/categories'),
+  });
 
   const products = useQuery({
     queryKey: ['seller-products', sellerId],
@@ -892,6 +901,12 @@ function ProductsPanel() {
     enabled: Boolean(sellerId),
     queryFn: () => apiFetch<SellerOrder[]>(`/v1/orders/by-seller/${sellerId}`),
   });
+
+  useEffect(() => {
+    if (!categoryId && categories.data?.length) {
+      setCategoryId(categories.data.find((c) => c.id === 'general')?.id ?? categories.data[0]!.id);
+    }
+  }, [categories.data, categoryId]);
 
   const soldIds = useMemo(() => {
     const ids = new Set<string>();
@@ -924,31 +939,62 @@ function ProductsPanel() {
       ) as 'image/jpeg' | 'image/png' | 'image/webp';
       await uploadViaSignedUrl(path, imageFile, contentType);
       const images: Product['images'] = [{ path, contentType, sortOrder: 0 }];
-      return apiFetch<Product>('/v1/catalogue/products', {
-        method: 'POST',
-        body: JSON.stringify({
-          sellerId,
-          title: title.trim(),
-          description: description.trim(),
-          attributes: {},
-          images,
-          variants: [{ sku, title: 'Default', priceCents, attributes: {} }],
-          taxClassification: 'standard',
-          handlingTimeDays: 2,
-          initialStock: stock,
+
+      let resolvedCategoryId = categoryId;
+      let categoryNote = '';
+      if (categoryMode === 'suggest') {
+        const name = suggestedCategory.trim();
+        if (name.length < 2) throw new Error('Enter a category name to suggest.');
+        const suggested = await apiFetch<{
+          suggestion: { status: string };
+          category: Category;
+        }>('/v1/catalogue/category-suggestions', {
+          method: 'POST',
+          body: JSON.stringify({ sellerId, name }),
+        });
+        resolvedCategoryId = suggested.category.id;
+        categoryNote =
+          suggested.suggestion.status === 'pending'
+            ? ' Category suggested — Nexle staff will approve or rewrite it before it appears in Shop by department.'
+            : ' Matched an existing category.';
+      } else if (!resolvedCategoryId) {
+        throw new Error('Select a category.');
+      }
+
+      return {
+        product: await apiFetch<Product>('/v1/catalogue/products', {
+          method: 'POST',
+          body: JSON.stringify({
+            sellerId,
+            title: title.trim(),
+            description: description.trim(),
+            categoryId: resolvedCategoryId,
+            attributes: {},
+            images,
+            variants: [{ sku, title: 'Default', priceCents, attributes: {} }],
+            taxClassification: 'standard',
+            handlingTimeDays: 2,
+            initialStock: stock,
+          }),
         }),
-      });
+        categoryNote,
+      };
     },
-    onSuccess: async () => {
-      setMessage('Draft listing created. Click Publish when you’re ready for customers to see it.');
+    onSuccess: async (result) => {
+      setMessage(
+        `Draft listing created.${result.categoryNote} Click Publish when you’re ready for customers to see it.`,
+      );
       setError(null);
       setShowForm(false);
       setTitle('');
       setDescription('');
       setPriceRands('100');
       setStockQty('10');
+      setSuggestedCategory('');
+      setCategoryMode('select');
       setImageFile(null);
       await qc.invalidateQueries({ queryKey: ['seller-products', sellerId] });
+      await qc.invalidateQueries({ queryKey: ['store-categories'] });
     },
     onError: (err: Error) => setError(err.message),
   });
@@ -1023,6 +1069,64 @@ function ProductsPanel() {
               onChange={(e) => setImageFile(e.target.files?.[0] ?? null)}
             />
           </label>
+          <fieldset className={styles.stack} style={{ border: 'none', padding: 0, margin: 0 }}>
+            <legend className={styles.muted} style={{ padding: 0 }}>
+              Category
+            </legend>
+            <div className={styles.row}>
+              <label className={styles.row}>
+                <input
+                  type="radio"
+                  name="categoryMode"
+                  checked={categoryMode === 'select'}
+                  onChange={() => setCategoryMode('select')}
+                />
+                Choose existing
+              </label>
+              <label className={styles.row}>
+                <input
+                  type="radio"
+                  name="categoryMode"
+                  checked={categoryMode === 'suggest'}
+                  onChange={() => setCategoryMode('suggest')}
+                />
+                Suggest a new one
+              </label>
+            </div>
+            {categoryMode === 'select' ? (
+              <label className={styles.field}>
+                Department
+                <select
+                  required
+                  value={categoryId}
+                  onChange={(e) => setCategoryId(e.target.value)}
+                >
+                  {(categories.data ?? []).map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : (
+              <label className={styles.field}>
+                New category name
+                <input
+                  required
+                  minLength={2}
+                  placeholder="e.g. Outdoor camping"
+                  value={suggestedCategory}
+                  onChange={(e) => setSuggestedCategory(e.target.value)}
+                />
+              </label>
+            )}
+            {categoryMode === 'suggest' && (
+              <p className={styles.muted} style={{ margin: 0 }}>
+                Staff must approve (or rename) new categories before they show under Shop by
+                department. Your product can still be published.
+              </p>
+            )}
+          </fieldset>
           <div className={styles.split}>
             <label className={styles.field}>
               Price (Rands)

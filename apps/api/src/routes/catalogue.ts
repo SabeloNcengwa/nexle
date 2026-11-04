@@ -23,6 +23,34 @@ catalogueRouter.post(
   }),
 );
 
+catalogueRouter.post(
+  '/category-suggestions',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const data = await catalogue.suggestCategory(req.actor, req.body);
+    res.status(201).json({ data });
+  }),
+);
+
+catalogueRouter.get(
+  '/category-suggestions',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+    const data = await catalogue.listCategorySuggestions(req.actor, status);
+    res.json({ data });
+  }),
+);
+
+catalogueRouter.post(
+  '/category-suggestions/review',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const data = await catalogue.reviewCategorySuggestion(req.actor, req.body);
+    res.json({ data });
+  }),
+);
+
 catalogueRouter.get(
   '/products',
   asyncHandler(async (req, res) => {

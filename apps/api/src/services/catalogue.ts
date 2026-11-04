@@ -1,12 +1,16 @@
 import {
   createProductSchema,
+  DEFAULT_STORE_CATEGORIES,
   moderateProductSchema,
   productSearchQuerySchema,
+  reviewCategorySuggestionSchema,
   submitProductForReviewSchema,
+  suggestCategorySchema,
   updateInventorySchema,
   updateProductSchema,
   upsertCategorySchema,
   type Category,
+  type CategorySuggestion,
   type InventoryRecord,
   type Product,
 } from '@mavundla/shared';
@@ -112,43 +116,298 @@ export async function upsertCategory(
   return { id: ref.id, ...doc };
 }
 
+function mapCategory(id: string, data: DocData): Category {
+  return {
+    id,
+    name: String(data.name),
+    slug: String(data.slug),
+    parentId: (data.parentId as string | null | undefined) ?? null,
+    path: (data.path as string[]) ?? [],
+    sortOrder: Number(data.sortOrder ?? 0),
+    isActive: Boolean(data.isActive ?? true),
+    pendingApproval: Boolean(data.pendingApproval),
+    suggestionId: data.suggestionId ? String(data.suggestionId) : undefined,
+  };
+}
+
+function slugifyCategoryName(name: string): string {
+  const slug = name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return slug || 'category';
+}
+
+/** Seed storefront departments once so sellers and shoppers share the same list. */
+export async function ensureDefaultCategories(): Promise<void> {
+  const now = new Date().toISOString();
+  for (const cat of DEFAULT_STORE_CATEGORIES) {
+    const ref = db().collection('categories').doc(cat.id);
+    const snap = await ref.get();
+    if (snap.exists) continue;
+    await ref.set({
+      name: cat.name,
+      slug: cat.slug,
+      parentId: null,
+      path: [],
+      sortOrder: cat.sortOrder,
+      isActive: true,
+      pendingApproval: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+}
+
 export async function listCategories(includeInactive = false): Promise<Category[]> {
-  let query: import("../db/store.js").Query = db().collection('categories');
+  await ensureDefaultCategories();
+  let query: import('../db/store.js').Query = db().collection('categories');
   if (!includeInactive) {
     query = query.where('isActive', '==', true);
   }
   const snap = await query.orderBy('sortOrder', 'asc').get();
-  return snap.docs.map((d) => {
-    const data = d.data();
-    return {
-      id: d.id,
-      name: data.name,
-      slug: data.slug,
-      parentId: data.parentId ?? null,
-      path: data.path ?? [],
-      sortOrder: data.sortOrder ?? 0,
-      isActive: data.isActive ?? true,
-    };
-  });
+  return snap.docs.map((d) => mapCategory(d.id, d.data()));
 }
 
-/** Stable default category so sellers never type a category ID. */
+/** Stable default category fallback. */
 export async function ensureGeneralCategory(): Promise<string> {
-  const ref = db().collection('categories').doc('general');
-  const snap = await ref.get();
-  if (snap.exists) return ref.id;
+  await ensureDefaultCategories();
+  return 'general';
+}
+
+function mapCategorySuggestion(id: string, data: DocData): CategorySuggestion {
+  return {
+    id,
+    proposedName: String(data.proposedName),
+    sellerId: String(data.sellerId),
+    proposedByUid: String(data.proposedByUid),
+    status: data.status as CategorySuggestion['status'],
+    categoryId: data.categoryId ? String(data.categoryId) : undefined,
+    reviewedName: data.reviewedName ? String(data.reviewedName) : undefined,
+    reviewedSlug: data.reviewedSlug ? String(data.reviewedSlug) : undefined,
+    reviewReason: data.reviewReason ? String(data.reviewReason) : undefined,
+    reviewerUid: data.reviewerUid ? String(data.reviewerUid) : undefined,
+    reviewedAt: data.reviewedAt ? String(data.reviewedAt) : undefined,
+    createdAt: String(data.createdAt),
+    updatedAt: String(data.updatedAt),
+  };
+}
+
+/** Seller suggests a category — stays inactive until staff approve or rewrite. */
+export async function suggestCategory(
+  actor: Actor | undefined,
+  body: unknown,
+): Promise<{ suggestion: CategorySuggestion; category: Category }> {
+  requireAuthenticatedUser(actor);
+  const input = suggestCategorySchema.parse(body);
+  assertSellerPermission(actor, input.sellerId, 'seller:manage_products');
+
+  const proposedName = input.name.trim().replace(/\s+/g, ' ');
+  const baseSlug = slugifyCategoryName(proposedName);
   const now = new Date().toISOString();
-  await ref.set({
-    name: 'General',
-    slug: 'general',
-    parentId: null,
-    path: [],
-    sortOrder: 0,
-    isActive: true,
+
+  // Reuse an existing active category with the same name/slug instead of duplicating.
+  const active = await listCategories(false);
+  const existing = active.find(
+    (c) =>
+      c.slug === baseSlug || c.name.toLowerCase() === proposedName.toLowerCase(),
+  );
+  if (existing) {
+    const suggestionRef = db().collection('categorySuggestions').doc();
+    const suggestionDoc = {
+      proposedName,
+      sellerId: input.sellerId,
+      proposedByUid: actor.uid,
+      status: 'approved' as const,
+      categoryId: existing.id,
+      reviewedName: existing.name,
+      reviewedSlug: existing.slug,
+      reviewerUid: 'system',
+      reviewedAt: now,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await suggestionRef.set(suggestionDoc);
+    return {
+      suggestion: mapCategorySuggestion(suggestionRef.id, suggestionDoc),
+      category: existing,
+    };
+  }
+
+  const suggestionRef = db().collection('categorySuggestions').doc();
+  const categoryRef = db().collection('categories').doc();
+  const slug = `${baseSlug}-${suggestionRef.id.slice(0, 6)}`;
+  const suggestionDoc = {
+    proposedName,
+    sellerId: input.sellerId,
+    proposedByUid: actor.uid,
+    status: 'pending' as const,
+    categoryId: categoryRef.id,
     createdAt: now,
     updatedAt: now,
+  };
+  const categoryDoc = {
+    name: proposedName,
+    slug,
+    parentId: null,
+    path: [],
+    sortOrder: 500,
+    isActive: false,
+    pendingApproval: true,
+    suggestionId: suggestionRef.id,
+    createdAt: now,
+    updatedAt: now,
+  };
+  await suggestionRef.set(suggestionDoc);
+  await categoryRef.set(categoryDoc);
+  await writeAuditLog({
+    actorUid: actor.uid,
+    action: 'category.suggested',
+    resourceType: 'categorySuggestions',
+    resourceId: suggestionRef.id,
+    metadata: { proposedName, categoryId: categoryRef.id },
   });
-  return ref.id;
+  return {
+    suggestion: mapCategorySuggestion(suggestionRef.id, suggestionDoc),
+    category: mapCategory(categoryRef.id, categoryDoc),
+  };
+}
+
+export async function listCategorySuggestions(
+  actor: Actor | undefined,
+  status?: string,
+): Promise<CategorySuggestion[]> {
+  requirePlatformPermission(actor, ['super_admin', 'catalogue_moderator', 'support_agent']);
+  let query: import('../db/store.js').Query = db().collection('categorySuggestions');
+  if (status === 'pending' || status === 'approved' || status === 'rejected') {
+    query = query.where('status', '==', status);
+  }
+  const snap = await query.orderBy('createdAt', 'desc').limit(100).get();
+  return snap.docs.map((d) => mapCategorySuggestion(d.id, d.data()));
+}
+
+export async function reviewCategorySuggestion(
+  actor: Actor | undefined,
+  body: unknown,
+): Promise<{ suggestion: CategorySuggestion; category?: Category }> {
+  requirePlatformPermission(actor, ['super_admin', 'catalogue_moderator']);
+  const input = reviewCategorySuggestionSchema.parse(body);
+  const suggestionRef = db().collection('categorySuggestions').doc(input.suggestionId);
+  const suggestionSnap = await suggestionRef.get();
+  if (!suggestionSnap.exists) throw new AppError('NOT_FOUND', 'Suggestion not found', 404);
+  const existing = suggestionSnap.data()!;
+  if (existing.status !== 'pending') {
+    throw new AppError('INVALID_STATE', 'Suggestion already reviewed', 409);
+  }
+
+  const now = new Date().toISOString();
+  const categoryId = String(existing.categoryId ?? '');
+  const categoryRef = categoryId ? db().collection('categories').doc(categoryId) : null;
+
+  if (input.decision === 'rejected') {
+    await suggestionRef.update({
+      status: 'rejected',
+      reviewReason: input.reason,
+      reviewerUid: actor.uid,
+      reviewedAt: now,
+      updatedAt: now,
+    });
+    if (categoryRef) {
+      await categoryRef.update({
+        isActive: false,
+        pendingApproval: false,
+        updatedAt: now,
+      });
+      // Move any draft/active products off the rejected category onto General.
+      const products = await db().collection('products').where('categoryId', '==', categoryId).get();
+      const generalId = await ensureGeneralCategory();
+      for (const doc of products.docs) {
+        await doc.ref.update({ categoryId: generalId, updatedAt: now });
+      }
+    }
+    await writeAuditLog({
+      actorUid: actor.uid,
+      action: 'category.suggestion_rejected',
+      resourceType: 'categorySuggestions',
+      resourceId: input.suggestionId,
+      metadata: { reason: input.reason },
+    });
+    const updated = await suggestionRef.get();
+    return { suggestion: mapCategorySuggestion(suggestionRef.id, updated.data()!) };
+  }
+
+  const reviewedName = (input.name ?? String(existing.proposedName)).trim();
+  const reviewedSlug = input.slug ?? slugifyCategoryName(reviewedName);
+  if (!categoryRef) throw new AppError('NOT_FOUND', 'Suggested category missing', 404);
+
+  // Prefer merging into an existing active category with the same slug.
+  const active = await listCategories(true);
+  const mergeInto = active.find(
+    (c) => c.id !== categoryId && c.isActive && (c.slug === reviewedSlug || c.name.toLowerCase() === reviewedName.toLowerCase()),
+  );
+
+  if (mergeInto) {
+    const products = await db().collection('products').where('categoryId', '==', categoryId).get();
+    for (const doc of products.docs) {
+      await doc.ref.update({ categoryId: mergeInto.id, updatedAt: now });
+    }
+    await categoryRef.update({
+      isActive: false,
+      pendingApproval: false,
+      updatedAt: now,
+    });
+    await suggestionRef.update({
+      status: 'approved',
+      categoryId: mergeInto.id,
+      reviewedName: mergeInto.name,
+      reviewedSlug: mergeInto.slug,
+      reviewerUid: actor.uid,
+      reviewedAt: now,
+      updatedAt: now,
+    });
+    await writeAuditLog({
+      actorUid: actor.uid,
+      action: 'category.suggestion_merged',
+      resourceType: 'categorySuggestions',
+      resourceId: input.suggestionId,
+      metadata: { mergedInto: mergeInto.id },
+    });
+    const updated = await suggestionRef.get();
+    return {
+      suggestion: mapCategorySuggestion(suggestionRef.id, updated.data()!),
+      category: mergeInto,
+    };
+  }
+
+  await categoryRef.update({
+    name: reviewedName,
+    slug: reviewedSlug,
+    isActive: true,
+    pendingApproval: false,
+    updatedAt: now,
+  });
+  await suggestionRef.update({
+    status: 'approved',
+    reviewedName,
+    reviewedSlug,
+    reviewerUid: actor.uid,
+    reviewedAt: now,
+    updatedAt: now,
+  });
+  await writeAuditLog({
+    actorUid: actor.uid,
+    action: 'category.suggestion_approved',
+    resourceType: 'categorySuggestions',
+    resourceId: input.suggestionId,
+    metadata: { reviewedName, reviewedSlug },
+  });
+  const updatedSuggestion = await suggestionRef.get();
+  const updatedCategory = await categoryRef.get();
+  return {
+    suggestion: mapCategorySuggestion(suggestionRef.id, updatedSuggestion.data()!),
+    category: mapCategory(categoryRef.id, updatedCategory.data()!),
+  };
 }
 
 export async function createProduct(actor: Actor | undefined, body: unknown): Promise<Product> {
@@ -167,7 +426,16 @@ export async function createProduct(actor: Actor | undefined, body: unknown): Pr
     throw new AppError('VALIDATION_ERROR', 'Variant SKUs must be unique', 400);
   }
 
+  await ensureDefaultCategories();
   const categoryId = input.categoryId?.trim() || (await ensureGeneralCategory());
+  const categorySnap = await db().collection('categories').doc(categoryId).get();
+  if (!categorySnap.exists) {
+    throw new AppError('VALIDATION_ERROR', 'Choose a valid category', 400);
+  }
+  const categoryData = categorySnap.data()!;
+  if (!categoryData.isActive && !categoryData.pendingApproval) {
+    throw new AppError('VALIDATION_ERROR', 'That category is not available', 400);
+  }
   const initialStock = input.initialStock ?? 10;
   const { initialStock: _stock, categoryId: _cat, ...productFields } = input;
 

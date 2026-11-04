@@ -1,4 +1,4 @@
-import { formatZarFromCents, type Product } from '@mavundla/shared';
+import { DEFAULT_STORE_CATEGORIES, formatZarFromCents, type Category, type Product } from '@mavundla/shared';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { BrandLogo } from '../components/BrandLogo';
@@ -7,16 +7,10 @@ import { primaryProductImageUrl } from '../lib/productImage';
 import ui from '../components/ui.module.scss';
 import styles from './HomePage.module.scss';
 
-const DEPARTMENTS = [
-  { label: 'Electronics', hint: 'Phones, audio, gadgets', q: 'electronics' },
-  { label: 'Home', hint: 'Kitchen and living', q: 'home' },
-  { label: 'Fashion', hint: 'Everyday style', q: 'fashion' },
-  { label: 'Beauty', hint: 'Care and fragrance', q: 'beauty' },
-  { label: 'Sport', hint: 'Train and play', q: 'sport' },
-  { label: 'Baby', hint: 'For little ones', q: 'baby' },
-  { label: 'Gaming', hint: 'Play at home', q: 'gaming' },
-  { label: 'All deals', hint: 'Everything listed', q: '' },
-];
+function categoryHint(cat: Category): string {
+  const preset = DEFAULT_STORE_CATEGORIES.find((c) => c.id === cat.id || c.slug === cat.slug);
+  return preset?.hint ?? 'Shop this department';
+}
 
 export function HomePage() {
   const featured = useQuery({
@@ -24,6 +18,12 @@ export function HomePage() {
     queryFn: () =>
       apiFetch<{ items: Product[]; nextCursor: string | null }>('/v1/catalogue/products?limit=8'),
   });
+  const categories = useQuery({
+    queryKey: ['store-categories'],
+    queryFn: () => apiFetch<Category[]>('/v1/catalogue/categories'),
+  });
+
+  const departments = (categories.data ?? []).filter((c) => c.slug !== 'general');
 
   return (
     <div className={styles.page}>
@@ -86,16 +86,20 @@ export function HomePage() {
           </Link>
         </div>
         <div className={styles.deptGrid}>
-          {DEPARTMENTS.map((d) => (
+          {departments.map((d) => (
             <Link
-              key={d.label}
+              key={d.id}
               className={styles.deptChip}
-              to={d.q ? `/browse?q=${encodeURIComponent(d.q)}` : '/browse'}
+              to={`/browse?categoryId=${encodeURIComponent(d.id)}`}
             >
-              <strong>{d.label}</strong>
-              <span>{d.hint}</span>
+              <strong>{d.name}</strong>
+              <span>{categoryHint(d)}</span>
             </Link>
           ))}
+          <Link className={styles.deptChip} to="/browse">
+            <strong>All deals</strong>
+            <span>Everything listed</span>
+          </Link>
         </div>
       </section>
 

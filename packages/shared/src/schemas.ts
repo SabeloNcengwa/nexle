@@ -193,6 +193,35 @@ export const upsertCategorySchema = z.object({
   isActive: z.boolean().default(true),
 });
 
+export const suggestCategorySchema = z.object({
+  sellerId: z.string().min(1),
+  name: z.string().min(2).max(120),
+});
+
+export const reviewCategorySuggestionSchema = z.object({
+  suggestionId: z.string().min(1),
+  decision: z.enum(['approved', 'rejected']),
+  /** Admin can rewrite the storefront name/slug before approving. */
+  name: z.string().min(2).max(120).optional(),
+  slug: z
+    .string()
+    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+    .optional(),
+  reason: z.string().max(500).optional(),
+});
+
+/** Built-in departments shown on the storefront. */
+export const DEFAULT_STORE_CATEGORIES = [
+  { id: 'electronics', name: 'Electronics', slug: 'electronics', sortOrder: 10, hint: 'Phones, audio, gadgets' },
+  { id: 'home', name: 'Home', slug: 'home', sortOrder: 20, hint: 'Kitchen and living' },
+  { id: 'fashion', name: 'Fashion', slug: 'fashion', sortOrder: 30, hint: 'Everyday style' },
+  { id: 'beauty', name: 'Beauty', slug: 'beauty', sortOrder: 40, hint: 'Care and fragrance' },
+  { id: 'sport', name: 'Sport', slug: 'sport', sortOrder: 50, hint: 'Train and play' },
+  { id: 'baby', name: 'Baby', slug: 'baby', sortOrder: 60, hint: 'For little ones' },
+  { id: 'gaming', name: 'Gaming', slug: 'gaming', sortOrder: 70, hint: 'Play at home' },
+  { id: 'general', name: 'General', slug: 'general', sortOrder: 900, hint: 'Everything else' },
+] as const;
+
 export const updateInventorySchema = z.object({
   inventoryId: z.string().min(1),
   quantityOnHand: z.number().int().nonnegative(),
